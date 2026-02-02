@@ -3,7 +3,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { html } from 'hono/html';
+import { html, HtmlEscapedString } from 'hono/html';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
 import { processCheckResult, findDeadChecks } from './services/logic';
@@ -32,7 +32,7 @@ app.use('*', cors());
  * @param title - Page title
  * @param content - Main content to render
  */
-const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; content: string }) => html`
+const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; content: string | HtmlEscapedString }) => html`
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -194,17 +194,19 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
   </main>
   <script>
     // Alpine.js time formatting utility
-    document.addEventListener('alpine:init', () => {
-      Alpine.magic('time', () => (timestamp: number) => {
-        if (!timestamp) return 'Never';
-        const date = new Date(timestamp * 1000);
-        const now = new Date();
-        const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+    document.addEventListener('alpine:init', function() {
+      Alpine.magic('time', function() {
+        return function(timestamp) {
+          if (!timestamp) return 'Never';
+          var date = new Date(timestamp * 1000);
+          var now = new Date();
+          var diff = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-        if (diff < 60) return 'Just now';
-        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-        return date.toLocaleDateString();
+          if (diff < 60) return 'Just now';
+          if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+          if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+          return date.toLocaleDateString();
+        };
       });
     });
   </script>
