@@ -18,22 +18,41 @@
 import { D1Database } from '@cloudflare/workers-types';
 import { Env } from '../types';
 
+/**
+ * Database setting record
+ */
 export interface Setting {
+  /** Setting key (e.g., "slack_api_token") */
   key: string;
+  /** Setting value */
   value: string;
+  /** Optional description for UI */
   description: string | null;
+  /** Unix timestamp of last update */
   updated_at: number;
 }
 
+/**
+ * Slack notification settings
+ */
 export interface SlackSettings {
+  /** Slack Bot Token (xoxb-...) */
   api_token: string;
+  /** Channel ID for critical alerts */
   channel_critical: string;
+  /** Channel ID for recovery notices */
   channel_success: string;
+  /** Channel ID for warning alerts */
   channel_warning: string;
+  /** Channel ID for info logs */
   channel_info: string;
 }
 
+/**
+ * All application settings
+ */
 export interface AllSettings extends SlackSettings {
+  /** Cooldown period between duplicate alerts (seconds) */
   silence_period_seconds: number;
 }
 
@@ -47,7 +66,16 @@ const DB_KEY_TO_INTERFACE_KEY: Record<string, keyof AllSettings> = {
   'silence_period_seconds': 'silence_period_seconds',
 };
 
-// Get all settings as a typed object
+/**
+ * Get all settings from the database
+ *
+ * @param db - D1 database instance
+ * @returns All settings with defaults for missing values
+ *
+ * @example
+ * const settings = await getAllSettings(db);
+ * console.log(settings.api_token);
+ */
 export async function getAllSettings(db: D1Database): Promise<AllSettings> {
   const result = await db.prepare('SELECT * FROM settings').all<Setting>();
 
@@ -74,7 +102,14 @@ export async function getAllSettings(db: D1Database): Promise<AllSettings> {
   return settings;
 }
 
-// Update a single setting
+/**
+ * Update a single setting in the database
+ *
+ * @param db - D1 database instance
+ * @param key - Setting key (e.g., "slack_api_token")
+ * @param value - New value for the setting
+ * @returns true if successful, false on error
+ */
 export async function updateSetting(db: D1Database, key: string, value: string): Promise<boolean> {
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -88,7 +123,13 @@ export async function updateSetting(db: D1Database, key: string, value: string):
   }
 }
 
-// Update all Slack settings at once
+/**
+ * Update all Slack settings atomically
+ *
+ * @param db - D1 database instance
+ * @param settings - Slack settings object with values to update
+ * @returns true if successful, false on error
+ */
 export async function updateSlackSettings(db: D1Database, settings: SlackSettings): Promise<boolean> {
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -112,7 +153,16 @@ export async function updateSlackSettings(db: D1Database, settings: SlackSetting
   }
 }
 
-// Get settings for env usage (fallback to env vars if DB empty)
+/**
+ * Get settings with environment variable fallback
+ *
+ * This function provides a fallback to environment variables for
+ * backward compatibility. New deployments should use the database.
+ *
+ * @param db - D1 database instance
+ * @param env - Cloudflare Worker environment bindings
+ * @returns All settings with env var fallbacks
+ */
 export async function getEnvWithFallback(db: D1Database, env: Env): Promise<AllSettings> {
   const dbSettings = await getAllSettings(db);
 
