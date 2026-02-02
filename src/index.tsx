@@ -7,6 +7,7 @@ import { html } from 'hono/html';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
 import { processCheckResult, findDeadChecks } from './services/logic';
+import { getAllSettings, updateSlackSettings, updateSetting } from './services/settings';
 
 // Type for Hono bindings
 type AppBindings = {
@@ -173,6 +174,25 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
     }
     [x-cloak] {
       display: none !important;
+    }
+    .status-badge {
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-badge.ok {
+      background: rgba(46, 204, 113, 0.2);
+      color: #2ecc71;
+    }
+    .status-badge.error {
+      background: rgba(231, 76, 60, 0.2);
+      color: #e74c3c;
+    }
+    .status-badge.dead {
+      background: rgba(127, 140, 141, 0.2);
+      color: #95a5a6;
     }
   </style>
 </head>
@@ -657,6 +677,579 @@ app.post('/api/maintenance/:projectId', async (c) => {
     return c.json({ error: 'Invalid request' }, 400);
   }
 });
+
+// ============================================================================
+// Admin UI Routes
+// ============================================================================
+
+/**
+ * GET /admin
+ * Admin dashboard for managing settings, projects, and checks
+ */
+app.get('/admin', async (c) => {
+  const db = c.env.DB;
+
+  try {
+    // Get all settings
+    const settings = await getAllSettings(db);
+
+    // Get all projects
+    const projectsResult = await db
+      .prepare('SELECT * FROM projects ORDER BY display_name')
+      .all<Project>();
+    const projects = projectsResult.results;
+
+    // Get all checks
+    const checksResult = await db
+      .prepare('SELECT * FROM checks ORDER BY project_id, name')
+      .all<Check>();
+    const checks = checksResult.results;
+
+    // Group checks by project
+    const projectsWithChecks = projects.map((project) => ({
+      ...project,
+      checks: checks.filter((check) => check.project_id === project.id),
+    }));
+
+    const adminContent = html`
+<div x-data="{ openTab: 'settings' }">
+  <header style="margin-bottom: 2rem; border-bottom: 1px solid #333; padding-bottom: 1rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h1 style="margin: 0;">Admin Dashboard</h1>
+        <p style="margin: 0.25rem 0 0 0; color: #888;">Manage settings, projects, and checks</p>
+      </div>
+      <a href="/" class="outline secondary">Back to Dashboard</a>
+    </div>
+    <nav style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+      <button
+        @click="openTab = 'settings'"
+        :class="openTab === 'settings' ? 'primary' : 'outline secondary'"
+      >Settings</button>
+      <button
+        @click="openTab = 'projects'"
+        :class="openTab === 'projects' ? 'primary' : 'outline secondary'"
+      >Projects</button>
+      <button
+        @click="openTab = 'checks'"
+        :class="openTab === 'checks' ? 'primary' : 'outline secondary'"
+      >Checks</button>
+    </nav>
+  </header>
+
+  <!-- Settings Tab -->
+  <div x-show="openTab === 'settings'" x-cloak>
+    <h2>Slack Settings</h2>
+    <form hx-post="/admin/settings/slack" hx-swap="outerHTML">
+      <div class="grid">
+        <label>
+          API Token
+          <input
+            type="text"
+            name="api_token"
+            value="${settings.api_token}"
+            placeholder="xoxb-..."
+            required
+          />
+        </label>
+        <label>
+          Critical Channel
+          <input
+            type="text"
+            name="channel_critical"
+            value="${settings.channel_critical}"
+            placeholder="#alerts-critical"
+            required
+          />
+        </label>
+        <label>
+          Success Channel
+          <input
+            type="text"
+            name="channel_success"
+            value="${settings.channel_success}"
+            placeholder="#alerts-success"
+            required
+          />
+        </label>
+        <label>
+          Warning Channel
+          <input
+            type="text"
+            name="channel_warning"
+            value="${settings.channel_warning}"
+            placeholder="#alerts-warning"
+            required
+          />
+        </label>
+        <label>
+          Info Channel
+          <input
+            type="text"
+            name="channel_info"
+            value="${settings.channel_info}"
+            placeholder="#alerts-info"
+            required
+          />
+        </label>
+        <label>
+          Silence Period (seconds)
+          <input
+            type="number"
+            name="silence_period_seconds"
+            value="${settings.silence_period_seconds}"
+            min="0"
+            step="60"
+            required
+          />
+        </label>
+      </div>
+      <button type="submit" class="primary">Save Settings</button>
+    </form>
+  </div>
+
+  <!-- Projects Tab -->
+  <div x-show="openTab === 'projects'" x-cloak>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2>Projects</h2>
+      <button
+        hx-post="/admin/projects/new-dialog"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+        class="primary"
+      >New Project</button>
+    </div>
+    <table class="striped">
+      <thead>
+        <tr>
+          <th>Display Name</th>
+          <th>Project ID</th>
+          <th>Checks</th>
+          <th>Maintenance Until</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${projectsWithChecks.map(p => html`
+          <tr>
+            <td>${p.display_name}</td>
+            <td><code>${p.id}</code></td>
+            <td>${p.checks.length}</td>
+            <td>${p.maintenance_until > 0 ? new Date(p.maintenance_until * 1000).toLocaleString() : 'Not in maintenance'}</td>
+            <td>
+              <button
+                hx-delete="/admin/projects/${p.id}"
+                hx-confirm="Are you sure? This will delete the project and all its checks."
+                hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
+                hx-get="/admin"
+                hx-target="body"
+                hx-swap="outerHTML"
+                class="outline secondary"
+                style="font-size: 0.75rem;"
+              >Delete</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Checks Tab -->
+  <div x-show="openTab === 'checks'" x-cloak>
+    <h2>All Checks</h2>
+    <table class="striped">
+      <thead>
+        <tr>
+          <th>Display Name</th>
+          <th>Check ID</th>
+          <th>Type</th>
+          <th>Interval</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${checks.map(check => html`
+          <tr>
+            <td>${check.display_name || check.name}</td>
+            <td><code>${check.id}</code></td>
+            <td>${check.type}</td>
+            <td>${check.type === 'heartbeat' ? `${check.interval}s` : 'N/A'}</td>
+            <td>
+              <span class="status-badge ${check.status}">${check.status}</span>
+            </td>
+            <td>
+              <button
+                hx-get="/admin/checks/${check.id}/edit"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="outline secondary"
+                style="font-size: 0.75rem;"
+              >Edit</button>
+              <button
+                hx-delete="/admin/checks/${check.id}"
+                hx-confirm="Are you sure?"
+                hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
+                hx-get="/admin"
+                hx-target="body"
+                hx-swap="outerHTML"
+                class="outline secondary"
+                style="font-size: 0.75rem;"
+              >Delete</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+</div>
+    `;
+
+    return c.html(Layout({ title: 'Admin - Watch-Dog Sentinel', content: adminContent }));
+  } catch (error) {
+    console.error('Admin error:', error);
+    const errorContent = html`
+      <div class="empty-state">
+        <h3>Error loading admin</h3>
+        <p>Unable to fetch data. Please try again.</p>
+      </div>
+    `;
+    return c.html(Layout({ title: 'Admin - Watch-Dog Sentinel', content: errorContent }));
+  }
+});
+
+/**
+ * POST /admin/settings/slack
+ * Save Slack settings
+ */
+app.post('/admin/settings/slack', async (c) => {
+  const db = c.env.DB;
+
+  try {
+    const body = await c.req.parseBody();
+    const {
+      api_token,
+      channel_critical,
+      channel_success,
+      channel_warning,
+      channel_info,
+      silence_period_seconds,
+    } = body;
+
+    await updateSlackSettings(db, {
+      api_token: api_token as string,
+      channel_critical: channel_critical as string,
+      channel_success: channel_success as string,
+      channel_warning: channel_warning as string,
+      channel_info: channel_info as string,
+    });
+
+    // Update silence period separately
+    await updateSetting(db, 'silence_period_seconds', silence_period_seconds as string);
+
+    // Return success message with HTMX redirect
+    return c.html(html`
+      <div style="padding: 1rem; background: #2ecc71; color: white; border-radius: 0.5rem; margin-bottom: 1rem;">
+        Settings saved successfully!
+      </div>
+      <script>htmx.trigger(document.body, 'reloadAdmin'); setTimeout(() => htmx.ajax('GET', '/admin', {target: 'body', swap: 'outerHTML'}), 500);</script>
+    `);
+  } catch (error) {
+    console.error('Settings save error:', error);
+    return c.html(html`
+      <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem; margin-bottom: 1rem;">
+        Error saving settings. Please try again.
+      </div>
+    `);
+  }
+});
+
+/**
+ * DELETE /admin/projects/:projectId
+ * Delete a project and all its checks
+ */
+app.delete('/admin/projects/:projectId', async (c) => {
+  const db = c.env.DB;
+  const projectId = c.req.param('projectId');
+
+  try {
+    // Delete all checks for this project first
+    await db.prepare('DELETE FROM checks WHERE project_id = ?').bind(projectId).run();
+
+    // Delete the project
+    await db.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
+
+    // Also delete logs for this project's checks
+    await db.prepare("DELETE FROM logs WHERE check_id LIKE ?").bind(`${projectId}:%`).run();
+
+    return c.json({ success: true, project_id: projectId });
+  } catch (error) {
+    console.error('Project delete error:', error);
+    return c.json({ error: 'Failed to delete project' }, 500);
+  }
+});
+
+/**
+ * DELETE /admin/checks/:checkId
+ * Delete a single check
+ */
+app.delete('/admin/checks/:checkId', async (c) => {
+  const db = c.env.DB;
+  const checkId = c.req.param('checkId');
+
+  try {
+    // Delete the check
+    await db.prepare('DELETE FROM checks WHERE id = ?').bind(checkId).run();
+
+    // Delete logs for this check
+    await db.prepare('DELETE FROM logs WHERE check_id = ?').bind(checkId).run();
+
+    return c.json({ success: true, check_id: checkId });
+  } catch (error) {
+    console.error('Check delete error:', error);
+    return c.json({ error: 'Failed to delete check' }, 500);
+  }
+});
+
+/**
+ * GET /admin/checks/:checkId/edit
+ * Show edit form for a check
+ */
+app.get('/admin/checks/:checkId/edit', async (c) => {
+  const db = c.env.DB;
+  const checkId = c.req.param('checkId');
+
+  try {
+    const check = await db
+      .prepare('SELECT * FROM checks WHERE id = ?')
+      .bind(checkId)
+      .first<Check>();
+
+    if (!check) {
+      return c.html(html`<div>Check not found</div>`);
+    }
+
+    return c.html(html`
+<div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+  <div @click.away="open = false; document.getElementById('modal-container').innerHTML = ''" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
+    <h3>Edit Check</h3>
+    <form hx-post="/admin/checks/${checkId}" hx-target="body" hx-swap="outerHTML">
+      <label>
+        Display Name
+        <input type="text" name="display_name" value="${check.display_name || check.name}" required />
+      </label>
+      <label>
+        Type
+        <select name="type">
+          <option value="heartbeat" ${check.type === 'heartbeat' ? 'selected' : ''}>Heartbeat</option>
+          <option value="event" ${check.type === 'event' ? 'selected' : ''}>Event</option>
+        </select>
+      </label>
+      <label>
+        Interval (seconds)
+        <input type="number" name="interval" value="${check.interval}" min="10" ${check.type === 'event' ? 'disabled' : ''} />
+      </label>
+      <label>
+        Grace Period (seconds)
+        <input type="number" name="grace" value="${check.grace}" min="0" />
+      </label>
+      <label>
+        Threshold (consecutive failures)
+        <input type="number" name="threshold" value="${check.threshold}" min="1" />
+      </label>
+      <label>
+        Cooldown (seconds between alerts)
+        <input type="number" name="cooldown" value="${check.cooldown}" min="0" />
+      </label>
+      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" class="outline secondary" @click="open = false; document.getElementById('modal-container').innerHTML = ''">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+    `);
+  } catch (error) {
+    console.error('Check edit error:', error);
+    return c.html(html`<div>Error loading check</div>`);
+  }
+});
+
+/**
+ * POST /admin/checks/:checkId
+ * Update a check
+ */
+app.post('/admin/checks/:checkId', async (c) => {
+  const db = c.env.DB;
+  const checkId = c.req.param('checkId');
+
+  try {
+    const body = await c.req.parseBody();
+    const {
+      display_name,
+      type,
+      interval,
+      grace,
+      threshold,
+      cooldown,
+    } = body;
+
+    await db.prepare(`
+      UPDATE checks SET
+        display_name = ?,
+        type = ?,
+        interval = ?,
+        grace = ?,
+        threshold = ?,
+        cooldown = ?
+      WHERE id = ?
+    `).bind(
+      display_name,
+      type,
+      interval ? parseInt(interval as string, 10) : 300,
+      grace ? parseInt(grace as string, 10) : 60,
+      threshold ? parseInt(threshold as string, 10) : 1,
+      cooldown ? parseInt(cooldown as string, 10) : 900,
+      checkId
+    ).run();
+
+    // Redirect back to admin page
+    return c.redirect('/admin');
+  } catch (error) {
+    console.error('Check update error:', error);
+    return c.html(html`<div>Error updating check</div>`);
+  }
+});
+
+/**
+ * POST /admin/projects/new-dialog
+ * Show new project form dialog
+ */
+app.post('/admin/projects/new-dialog', async (c) => {
+  return c.html(html`
+<div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+  <div @click.away="open = false; document.getElementById('modal-container').innerHTML = ''" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
+    <h3>New Project</h3>
+    <form hx-post="/admin/projects/new" hx-target="body" hx-swap="outerHTML">
+      <label>
+        Project ID
+        <input type="text" name="project_id" placeholder="my-service" required pattern="[a-z0-9-]+" />
+        <small>Lowercase letters, numbers, and hyphens only</small>
+      </label>
+      <label>
+        Display Name
+        <input type="text" name="display_name" placeholder="My Service" required />
+      </label>
+      <label>
+        Token
+        <input type="text" name="token" placeholder="Generate secure token" required minlength="16" />
+        <small>At least 16 characters</small>
+      </label>
+      <label>
+        Slack Webhook (optional)
+        <input type="text" name="slack_webhook" placeholder="https://hooks.slack.com/services/..." />
+      </label>
+      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button type="submit" class="primary">Create</button>
+        <button type="button" class="outline secondary" @click="open = false; document.getElementById('modal-container').innerHTML = ''">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+  `);
+});
+
+/**
+ * POST /admin/projects/new
+ * Create a new project
+ */
+app.post('/admin/projects/new', async (c) => {
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+
+  try {
+    const body = await c.req.parseBody();
+    const {
+      project_id,
+      display_name,
+      token,
+      slack_webhook,
+    } = body;
+
+    // Validate required fields
+    if (!project_id || !display_name || !token) {
+      return c.html(html`
+        <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem;">
+          Missing required fields
+        </div>
+      `);
+    }
+
+    // Check if project already exists
+    const existing = await db
+      .prepare('SELECT id FROM projects WHERE id = ?')
+      .bind(project_id)
+      .first();
+
+    if (existing) {
+      return c.html(html`
+        <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem;">
+          Project ID already exists
+        </div>
+      `);
+    }
+
+    // Create the project
+    await db.prepare(`
+      INSERT INTO projects (id, token, display_name, slack_webhook, maintenance_until, created_at)
+      VALUES (?, ?, ?, ?, 0, ?)
+    `).bind(
+      project_id,
+      token,
+      display_name,
+      slack_webhook || null,
+      now
+    ).run();
+
+    // Create a default self-check for the project
+    const checkId = `${project_id}:self`;
+    await db.prepare(`
+      INSERT INTO checks (
+        id, project_id, name, display_name, type,
+        interval, grace, threshold, cooldown,
+        last_seen, status, failure_count, last_alert_at, last_message
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ok', 0, 0, NULL)
+    `).bind(
+      checkId,
+      project_id,
+      'self',
+      'Self Health',
+      'heartbeat',
+      300,
+      60,
+      1,
+      900
+    ).run();
+
+    // Redirect to admin page
+    return c.redirect('/admin');
+  } catch (error) {
+    console.error('Project create error:', error);
+    return c.html(html`
+      <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem;">
+        Error creating project
+      </div>
+    `);
+  }
+});
+
+// ============================================================================
+// Status API Routes
+// ============================================================================
 
 /**
  * GET /api/status
