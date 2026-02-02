@@ -1004,37 +1004,39 @@ app.get('/admin', async (c) => {
         class="primary"
       >New Project</button>
     </div>
-    <table class="admin-projects-table striped">
-      <thead>
-        <tr>
-          <th>Display Name</th>
-          <th>Project ID</th>
-          <th>Checks</th>
-          <th>Maintenance Until</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${raw(projectsWithChecks.map(p => html`
+    <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+      <table class="admin-projects-table striped">
+        <thead>
           <tr>
-            <td>${p.display_name}</td>
-            <td><code>${p.id}</code></td>
-            <td>${p.checks.length}</td>
-            <td>${p.maintenance_until > 0 ? new Date(p.maintenance_until * 1000).toLocaleString() : 'Not in maintenance'}</td>
-            <td>
-              <button
-                hx-delete="/admin/projects/${p.id}"
-                hx-confirm="Are you sure? This will delete the project and all its checks."
-                hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
-                hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
-                class="outline secondary"
-                style="font-size: 0.75rem;"
-              >Delete</button>
-            </td>
+            <th>Display Name</th>
+            <th>Project ID</th>
+            <th>Checks</th>
+            <th>Maintenance Until</th>
+            <th>Actions</th>
           </tr>
-        `).join(''))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${raw(projectsWithChecks.map(p => html`
+            <tr>
+              <td>${p.display_name}</td>
+              <td><code>${p.id}</code></td>
+              <td>${p.checks.length}</td>
+              <td>${p.maintenance_until > 0 ? new Date(p.maintenance_until * 1000).toLocaleString() : 'Not in maintenance'}</td>
+              <td>
+                <button
+                  hx-delete="/admin/projects/${p.id}"
+                  hx-confirm="Are you sure? This will delete the project and all its checks."
+                  hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
+                  hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
+                  class="outline secondary"
+                  style="font-size: 0.75rem;"
+                >Delete</button>
+              </td>
+            </tr>
+          `).join(''))}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Checks Tab -->
@@ -1069,55 +1071,57 @@ app.get('/admin', async (c) => {
       </div>
 
       <div x-show="expanded" style="margin-top: 0.5rem; padding: 0 1rem 1rem 1rem; background: #1a1a1a; border-radius: 0 0 0.5rem 0.5rem;">
-        <table class="checks-table striped" style="font-size: 0.8rem;">
-          <thead>
-            <tr>
-              <th>Check Name</th>
-              <th>Type</th>
-              <th>Interval</th>
-              <th>Grace</th>
-              <th>Threshold</th>
-              <th>Cooldown</th>
-              <th>Status</th>
-              <th>Monitor</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${raw(sortedChecks.map((check: any) => html`
+        <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+          <table class="checks-table striped" style="font-size: 0.8rem;">
+            <thead>
               <tr>
-                <td>${check.display_name || check.name}</td>
-                <td>${check.type}</td>
-                <td>${check.interval}s</td>
-                <td>${check.grace}s</td>
-                <td>${check.threshold}</td>
-                <td>${check.cooldown}s</td>
-                <td>
-                  <span class="status-badge ${check.status}">${check.status}</span>
-                </td>
-                <td style="text-align: center;">
-                  <input
-                    type="checkbox"
-                    ${check.monitor ? 'checked' : ''}
-                    hx-post="/admin/checks/${check.id}/toggle"
-                    hx-vals='{"monitor": ${check.monitor ? 0 : 1}}'
-                    hx-swap="none"
-                  />
-                </td>
-                <td>
-                  <button
-                    hx-delete="/admin/checks/${check.id}"
-                    hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
-                    hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
-                    hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
-                    class="outline secondary"
-                    style="font-size: 0.7rem;"
-                  >Delete</button>
-                </td>
+                <th>Check Name</th>
+                <th>Type</th>
+                <th>Interval</th>
+                <th>Grace</th>
+                <th>Threshold</th>
+                <th>Cooldown</th>
+                <th>Status</th>
+                <th>Monitor</th>
+                <th></th>
               </tr>
-            `).join(''))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${raw(sortedChecks.map((check: any) => html`
+                <tr>
+                  <td>${check.display_name || check.name}</td>
+                  <td>${check.type}</td>
+                  <td>${check.interval}s</td>
+                  <td>${check.grace}s</td>
+                  <td>${check.threshold}</td>
+                  <td>${check.cooldown}s</td>
+                  <td>
+                    <span class="status-badge ${check.status}">${check.status}</span>
+                  </td>
+                  <td style="text-align: center;">
+                    <input
+                      type="checkbox"
+                      ${check.monitor ? 'checked' : ''}
+                      hx-post="/admin/checks/${check.id}/toggle"
+                      hx-vals='{"monitor": ${check.monitor ? 0 : 1}}'
+                      hx-swap="none"
+                    />
+                  </td>
+                  <td>
+                    <button
+                      hx-delete="/admin/checks/${check.id}"
+                      hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
+                      hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
+                      hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
+                      class="outline secondary"
+                      style="font-size: 0.7rem;"
+                    >Delete</button>
+                  </td>
+                </tr>
+              `).join(''))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>`;
         })
