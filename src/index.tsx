@@ -269,10 +269,14 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
     /* Mobile (< 640px) */
     @media (max-width: 639px) {
       /* Header: stack vertically */
+      .main-header-row {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.75rem !important;
+      }
+
       .header-actions {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.5rem;
+        align-self: flex-start;
       }
 
       /* Stats cards: single column */
@@ -383,6 +387,24 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
         max-width: 100%;
       }
 
+      /* Checks table: remove horizontal padding on mobile */
+      @media (max-width: 639px) {
+        .checks-expanded-content {
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+        }
+
+        .checks-table {
+          font-size: 0.7rem !important;
+        }
+
+        .checks-table th,
+        .checks-table td {
+          padding: 0.5rem 0.25rem !important;
+        }
+      }
+    }
+
       /* Checks table */
       .checks-table {
         min-width: max-content;
@@ -410,7 +432,7 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
 <body>
   <main class="container">
     <header style="margin-bottom: 2rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="main-header-row" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h1 style="margin: 0; font-size: 1.75rem;">Watch-Dog Sentinel</h1>
           <p style="margin: 0.25rem 0 0 0; color: #888;">Passive Monitoring Dashboard</p>
