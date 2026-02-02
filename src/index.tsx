@@ -754,11 +754,26 @@ app.get('/admin', async (c) => {
       .all<Check>();
     const checks = checksResult.results;
 
-    // Group checks by project
-    const projectsWithChecks = projects.map((project) => ({
-      ...project,
-      checks: checks.filter((check) => check.project_id === project.id),
-    }));
+    // Group checks by project and calculate project status
+    const projectsWithChecks = projects.map((project) => {
+      const projectChecks = checks.filter((check) => check.project_id === project.id);
+      // Calculate project status based on worst check status
+      let projectStatus: 'ok' | 'error' | 'dead' = 'ok';
+      for (const check of projectChecks) {
+        const status = check.status as any;
+        if (status === 'dead') {
+          projectStatus = 'dead';
+          break;
+        } else if (status === 'error' && projectStatus === 'ok') {
+          projectStatus = 'error';
+        }
+      }
+      return {
+        ...project,
+        checks: projectChecks,
+        projectStatus,
+      };
+    });
 
     const adminContent = html`
 <div x-data="{ openTab: 'settings' }">
@@ -902,57 +917,93 @@ app.get('/admin', async (c) => {
   </div>
 
   <!-- Checks Tab -->
-  <div x-show="openTab === 'checks'" x-cloak>
-    <h2>All Checks</h2>
-    <table class="striped" style="font-size: 0.85rem;">
-      <thead>
-        <tr>
-          <th>Display Name</th>
-          <th>Type</th>
-          <th>Interval</th>
-          <th>Grace</th>
-          <th>Threshold</th>
-          <th>Cooldown</th>
-          <th>Status</th>
-          <th>Monitor</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${checks.map(check => html`
-          <tr>
-            <td>${check.display_name || check.name}</td>
-            <td>${check.type}</td>
-            <td>${check.interval}s</td>
-            <td>${check.grace}s</td>
-            <td>${check.threshold}</td>
-            <td>${check.cooldown}s</td>
-            <td>
-              <span class="status-badge ${check.status}">${check.status}</span>
-            </td>
-            <td style="text-align: center;">
-              <input
-                type="checkbox"
-                ${check.monitor ? 'checked' : ''}
-                hx-post="/admin/checks/${check.id}/toggle"
-                hx-vals='{"monitor": ${check.monitor ? 0 : 1}}'
-                hx-swap="none"
-              />
-            </td>
-            <td>
-              <button
-                hx-delete="/admin/checks/${check.id}"
-                hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
-                hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
-                hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
-                class="outline secondary"
-                style="font-size: 0.75rem;"
-              >Delete</button>
-            </td>
-          </tr>
-        `)}
-      </tbody>
-    </table>
+  <div x-show="openTab === 'checks'" x-cloak x-data="{ filterProject: 'all', expandedProjects: {} }">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="margin: 0;">All Checks</h2>
+      <select x-model="filterProject" style="padding: 0.5rem;">
+        <option value="all">所有專案</option>
+        ${projects.map(p => html`<option value="${p.id}">${p.display_name}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="checks-list">
+      ${projectsWithChecks
+        .filter((p: any) => true) // Filter done in frontend via Alpine.js
+        .map((p: any) => {
+          const statusOrder: any = { dead: 3, error: 2, ok: 1 };
+          const sortedChecks = [...p.checks].sort((a: any, b: any) => statusOrder[b.status] - statusOrder[a.status]);
+          return html`
+    <div class="project-card" x-data="{ expanded: expandedProjects['${p.id}'] || false }">
+      <div
+        @click="expanded = !expanded; expandedProjects['${p.id}'] = expanded"
+        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; border-radius: 0.5rem; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
+      >
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <span style="font-size: 1.5rem;">${'▶'}</span>
+          <div>
+            <div style="font-weight: bold;">${p.display_name}</div>
+            <small style="color: #888;">${p.checks.length} checks</small>
+          </div>
+        </div>
+        <span class="status-badge ${p.projectStatus}">${p.projectStatus.toUpperCase()}</span>
+      </div>
+
+      <div x-show="expanded" style="margin-top: 0.5rem; padding: 0 1rem 1rem 1rem; background: #1a1a1a; border-radius: 0 0 0.5rem 0.5rem;">
+        <table class="striped" style="font-size: 0.8rem;">
+          <thead>
+            <tr>
+              <th>Check Name</th>
+              <th>Type</th>
+              <th>Interval</th>
+              <th>Grace</th>
+              <th>Threshold</th>
+              <th>Cooldown</th>
+              <th>Status</th>
+              <th>Monitor</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sortedChecks.map((check: any) => html`
+              <tr>
+                <td>${check.display_name || check.name}</td>
+                <td>${check.type}</td>
+                <td>${check.interval}s</td>
+                <td>${check.grace}s</td>
+                <td>${check.threshold}</td>
+                <td>${check.cooldown}s</td>
+                <td>
+                  <span class="status-badge ${check.status}">${check.status}</span>
+                </td>
+                <td style="text-align: center;">
+                  <input
+                    type="checkbox"
+                    ${check.monitor ? 'checked' : ''}
+                    hx-post="/admin/checks/${check.id}/toggle"
+                    hx-vals='{"monitor": ${check.monitor ? 0 : 1}}'
+                    hx-swap="none"
+                  />
+                </td>
+                <td>
+                  <button
+                    hx-delete="/admin/checks/${check.id}"
+                    hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
+                    hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
+                    hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
+                    class="outline secondary"
+                    style="font-size: 0.7rem;"
+                  >Delete</button>
+                </td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+          `;
+        })
+        .join('')}
+    </div>
   </div>
 
   <!-- Modal Container -->
