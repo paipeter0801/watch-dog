@@ -1,0 +1,63 @@
+export interface Env {
+  DB: D1Database;
+  SLACK_API_TOKEN: string;
+  SLACK_CHANNEL_CRITICAL: string;
+  SLACK_CHANNEL_SUCCESS: string;
+  SLACK_SILENCE_PERIOD_SECONDS?: string;
+}
+
+export interface Project {
+  id: string;
+  token: string;
+  display_name: string;
+  slack_webhook: string | null;
+  maintenance_until: number;
+  created_at: number;
+}
+
+export interface Check {
+  id: string;
+  project_id: string;
+  name: string;
+  display_name: string | null;
+  type: 'heartbeat' | 'event';
+  interval: number;
+  grace: number;
+  threshold: number;
+  cooldown: number;
+  last_seen: number;
+  status: 'ok' | 'error' | 'dead';
+  failure_count: number;
+  last_alert_at: number;
+  last_message: string | null;
+}
+
+export interface Log {
+  id: number;
+  check_id: string;
+  status: string;
+  latency: number | null;
+  message: string | null;
+  created_at: number;
+}
+
+export interface PulsePayload {
+  check_name: string;
+  status?: 'ok' | 'error';
+  message?: string;
+  latency?: number;
+}
+
+export interface CheckConfig {
+  name: string;
+  display_name: string;
+  type: 'heartbeat' | 'event';
+  interval?: number;
+  grace?: number;
+  threshold?: number;
+  cooldown?: number;
+}
+
+export interface ConfigPayload {
+  checks: CheckConfig[];
+}
