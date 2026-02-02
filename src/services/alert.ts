@@ -1,7 +1,9 @@
 // src/services/alert.ts
 // Slack alert service for Watch-Dog Sentinel
 
+import { D1Database } from '@cloudflare/workers-types';
 import { Env } from '../types';
+import { getAllSettings, AllSettings } from './settings';
 
 /**
  * Alert levels for Watch-Dog notifications
@@ -35,11 +37,12 @@ export interface SlackAlertData {
 
 /**
  * Channel mapping for different alert levels
+ * Maps alert levels to settings keys
  */
-const CHANNEL_MAP: Record<AlertLevel, keyof Env> = {
-  critical: 'SLACK_CHANNEL_CRITICAL',
-  recovery: 'SLACK_CHANNEL_SUCCESS',
-  warning: 'SLACK_CHANNEL_CRITICAL',
+const CHANNEL_MAP: Record<AlertLevel, keyof AllSettings> = {
+  critical: 'channel_critical',
+  recovery: 'channel_success',
+  warning: 'channel_critical',
 };
 
 /**
@@ -54,12 +57,12 @@ const STYLE_MAP: Record<AlertLevel, { emoji: string; color: string }> = {
 /**
  * Send an alert to Slack using the Block Kit API
  *
- * @param env - Cloudflare Workers environment bindings
+ * @param db - D1 database for fetching settings
  * @param data - Alert data
  *
  * @example
  * ```ts
- * await sendSlackAlert(env, {
+ * await sendSlackAlert(db, {
  *   checkId: 'chk_123',
  *   projectName: 'My API',
  *   checkName: 'Health Check',
@@ -70,7 +73,7 @@ const STYLE_MAP: Record<AlertLevel, { emoji: string; color: string }> = {
  * });
  * ```
  */
-export async function sendSlackAlert(env: Env, data: SlackAlertData): Promise<void> {
+export async function sendSlackAlert(db: D1Database, data: SlackAlertData): Promise<void> {
   const {
     checkId,
     projectName,
@@ -82,18 +85,21 @@ export async function sendSlackAlert(env: Env, data: SlackAlertData): Promise<vo
     metadata = {},
   } = data;
 
-  // Get Slack token from environment
-  const token = env.SLACK_API_TOKEN;
+  // Get settings from database
+  const settings = await getAllSettings(db);
+
+  // Get Slack token from settings
+  const token = settings.api_token;
   if (!token) {
-    console.warn('[Slack] SLACK_API_TOKEN not configured, skipping alert');
+    console.error('[Slack] Slack API token not configured, skipping alert');
     return;
   }
 
   // Get channel ID for this alert level
   const channelKey = CHANNEL_MAP[level];
-  const channelId = env[channelKey];
+  const channelId = settings[channelKey];
   if (!channelId) {
-    console.warn(`[Slack] Channel ${channelKey} not configured, skipping alert`);
+    console.error(`[Slack] Channel for ${level} alerts not configured, skipping alert`);
     return;
   }
 
@@ -241,30 +247,28 @@ export function isInSilencePeriod(
 }
 
 /**
- * Get the silence period from environment, with fallback
+ * Get the silence period from database settings
  *
- * @param env - Cloudflare Workers environment bindings
+ * @param db - D1 database for fetching settings
  * @returns Silence period in seconds (default: 3600 = 1 hour)
  */
-export function getSilencePeriod(env: Env): number {
-  const configured = env.SLACK_SILENCE_PERIOD_SECONDS;
-  if (!configured) return 3600; // Default: 1 hour
-  const parsed = parseInt(configured, 10);
-  return isNaN(parsed) ? 3600 : parsed;
+export async function getSilencePeriod(db: D1Database): Promise<number> {
+  const settings = await getAllSettings(db);
+  return settings.silence_period_seconds;
 }
 
 /**
  * Convenience function: Send a critical alert (service is DEAD)
  */
 export async function alertCritical(
-  env: Env,
+  db: D1Database,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(env, {
+  return sendSlackAlert(db, {
     checkId,
     projectName,
     checkName,
@@ -279,14 +283,14 @@ export async function alertCritical(
  * Convenience function: Send a recovery alert (service recovered)
  */
 export async function alertRecovery(
-  env: Env,
+  db: D1Database,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(env, {
+  return sendSlackAlert(db, {
     checkId,
     projectName,
     checkName,
@@ -301,14 +305,14 @@ export async function alertRecovery(
  * Convenience function: Send a warning alert (service reported error)
  */
 export async function alertWarning(
-  env: Env,
+  db: D1Database,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(env, {
+  return sendSlackAlert(db, {
     checkId,
     projectName,
     checkName,

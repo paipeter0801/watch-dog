@@ -4,6 +4,7 @@
 import { D1Database } from '@cloudflare/workers-types';
 import { Env, Check, Project } from '../types';
 import { sendSlackAlert, isInSilencePeriod, getSilencePeriod } from './alert';
+import { getAllSettings } from './settings';
 
 export async function processCheckResult(
   db: D1Database,
@@ -15,7 +16,7 @@ export async function processCheckResult(
   latency: number = 0
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  const silencePeriod = getSilencePeriod(env);
+  const silencePeriod = await getSilencePeriod(db);
 
   let failureCount = check.failure_count;
   let lastAlertAt = check.last_alert_at;
@@ -82,7 +83,7 @@ export async function processCheckResult(
       ? 'Service Warning'
       : 'Service Recovered';
 
-    await sendSlackAlert(env, {
+    await sendSlackAlert(db, {
       checkId: check.id,
       projectName: project.display_name,
       checkName: check.display_name || check.name,
