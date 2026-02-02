@@ -357,6 +357,22 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
       .checks-table {
         font-size: 0.7rem !important;
       }
+
+      /* Checks list cards: remove outer card styling */
+      .checks-list .project-card {
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+      }
+
+      /* Checks card wrapper */
+      .checks-card-wrapper {
+        background: #242424;
+        border: 1px solid #333;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        overflow: hidden;
+      }
     }
 
     /* Admin Dashboard - Tablet */
@@ -1063,10 +1079,10 @@ app.get('/admin', async (c) => {
         .map((p: any) => {
           const statusOrder: any = { dead: 3, error: 2, ok: 1 };
           const sortedChecks = [...p.checks].sort((a: any, b: any) => statusOrder[b.status] - statusOrder[a.status]);
-          return html`<div class="project-card" x-data="{ expanded: false }" x-show="filterProject === 'all' || filterProject === '${p.id}'">
+          return html`<div class="checks-card-wrapper" x-data="{ expanded: false }" x-show="filterProject === 'all' || filterProject === '${p.id}'">
       <div
         @click="expanded = !expanded"
-        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; border-radius: 0.5rem; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
+        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
       >
         <div style="display: flex; align-items: center; gap: 1rem;">
           <span x-text="expanded ? '▼' : '▶'" style="font-size: 1.5rem;"></span>
@@ -1078,7 +1094,7 @@ app.get('/admin', async (c) => {
         <span class="status-badge ${p.projectStatus}">${p.projectStatus.toUpperCase()}</span>
       </div>
 
-      <div x-show="expanded" style="margin-top: 0.5rem; padding: 0 1rem 1rem 1rem; background: #1a1a1a; border-radius: 0 0 0.5rem 0.5rem;">
+      <div x-show="expanded" style="padding: 0 1rem 1rem 1rem; background: #1a1a1a;">
         <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
           <table class="checks-table striped" style="font-size: 0.8rem;">
             <thead>
