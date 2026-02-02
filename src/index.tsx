@@ -345,7 +345,7 @@ app.get('/', async (c) => {
     </div>
   ` : html`
     <div class="dashboard-grid">
-      ${projectsWithChecks.map(ProjectCard).join('')}
+      ${projectsWithChecks.map((p) => html`${ProjectCard(p)}`)}
     </div>
   `}
 </div>
