@@ -297,6 +297,59 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
         grid-template-columns: repeat(3, 1fr) !important;
       }
     }
+
+    /* Admin Dashboard - Mobile */
+    @media (max-width: 639px) {
+      /* Admin header: stack back button */
+      .admin-header-row {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 1rem !important;
+      }
+
+      /* Admin tabs: stack buttons vertically */
+      .admin-tabs-nav {
+        flex-direction: column !important;
+      }
+
+      .admin-tabs-nav button {
+        width: 100%;
+      }
+
+      /* Settings form: single column */
+      .admin-settings-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Projects tab header: stack New Project button */
+      .admin-tab-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.5rem !important;
+      }
+
+      .admin-tab-header button {
+        width: 100%;
+      }
+
+      /* Projects table: smaller font */
+      .admin-projects-table {
+        font-size: 0.75rem;
+      }
+
+      /* Checks table inside card: smaller font */
+      .checks-table {
+        font-size: 0.7rem !important;
+      }
+    }
+
+    /* Admin Dashboard - Tablet */
+    @media (min-width: 640px) and (max-width: 1024px) {
+      /* Settings form: 2 columns */
+      .admin-settings-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -828,16 +881,16 @@ app.get('/admin', async (c) => {
     });
 
     const adminContent = html`
-<div x-data="{ openTab: 'settings' }">
+<div class="admin-dashboard" x-data="{ openTab: 'settings' }">
   <header style="margin-bottom: 2rem; border-bottom: 1px solid #333; padding-bottom: 1rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="admin-header-row" style="display: flex; justify-content: space-between; align-items: center;">
       <div>
         <h1 style="margin: 0;">Admin Dashboard</h1>
         <p style="margin: 0.25rem 0 0 0; color: #888;">Manage settings, projects, and checks</p>
       </div>
       <a href="/" class="outline secondary">Back to Dashboard</a>
     </div>
-    <nav style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+    <nav class="admin-tabs-nav" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
       <button
         @click="openTab = 'settings'"
         :class="openTab === 'settings' ? 'primary' : 'outline secondary'"
@@ -857,7 +910,7 @@ app.get('/admin', async (c) => {
   <div x-show="openTab === 'settings'" x-cloak>
     <h2>Slack Settings</h2>
     <form hx-post="/admin/settings/slack" hx-swap="outerHTML">
-      <div class="grid">
+      <div class="admin-settings-grid grid">
         <label>
           API Token
           <input
@@ -926,7 +979,7 @@ app.get('/admin', async (c) => {
 
   <!-- Projects Tab -->
   <div x-show="openTab === 'projects'" x-cloak>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div class="admin-tab-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h2>Projects</h2>
       <button
         hx-post="/admin/projects/new-dialog"
@@ -935,7 +988,7 @@ app.get('/admin', async (c) => {
         class="primary"
       >New Project</button>
     </div>
-    <table class="striped">
+    <table class="admin-projects-table striped">
       <thead>
         <tr>
           <th>Display Name</th>
@@ -1000,7 +1053,7 @@ app.get('/admin', async (c) => {
       </div>
 
       <div x-show="expanded" style="margin-top: 0.5rem; padding: 0 1rem 1rem 1rem; background: #1a1a1a; border-radius: 0 0 0.5rem 0.5rem;">
-        <table class="striped" style="font-size: 0.8rem;">
+        <table class="checks-table striped" style="font-size: 0.8rem;">
           <thead>
             <tr>
               <th>Check Name</th>
