@@ -1,8 +1,9 @@
 // src/index.tsx
-// Main entry point for Watch-Dog Sentinel - API Routes
+// Main entry point for Watch-Dog Sentinel - API Routes & Dashboard
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { html } from 'hono/html';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
 import { processCheckResult, findDeadChecks } from './services/logic';
@@ -22,13 +23,353 @@ const app = new Hono<{ Bindings: AppBindings }>();
 // Enable CORS for all routes
 app.use('*', cors());
 
+// ============================================================================
+// JSX UI Components
+// ============================================================================
+
+/**
+ * Layout component - HTML shell with CDN links for Pico.css, HTMX, Alpine.js
+ * @param title - Page title
+ * @param content - Main content to render
+ */
+const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; content: string }) => html`
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+  <!-- Pico.css -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script>
+  <style>
+    /* Custom dashboard styles */
+    body {
+      min-height: 100vh;
+      background: #1a1a1a;
+    }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .project-card {
+      border: 1px solid #333;
+      border-radius: 0.5rem;
+      padding: 1.25rem;
+      background: #242424;
+      transition: border-color 0.2s;
+    }
+    .project-card:hover {
+      border-color: #444;
+    }
+    .project-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .project-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .maintenance-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      background: #e67e22;
+      color: #fff;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .check-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .check-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem;
+      background: #2a2a2a;
+      border-radius: 0.375rem;
+      border-left: 3px solid;
+    }
+    .check-item.status-ok {
+      border-left-color: #2ecc71;
+    }
+    .check-item.status-error {
+      border-left-color: #e74c3c;
+    }
+    .check-item.status-dead {
+      border-left-color: #7f8c8d;
+    }
+    .check-name {
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    .check-meta {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 0.125rem;
+    }
+    .status-badge {
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-badge.ok {
+      background: rgba(46, 204, 113, 0.2);
+      color: #2ecc71;
+    }
+    .status-badge.error {
+      background: rgba(231, 76, 60, 0.2);
+      color: #e74c3c;
+    }
+    .status-badge.dead {
+      background: rgba(127, 140, 141, 0.2);
+      color: #95a5a6;
+    }
+    .maintenance-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #333;
+    }
+    .maintenance-controls button {
+      flex: 1;
+      padding: 0.375rem 0.5rem;
+      font-size: 0.75rem;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .last-updated {
+      font-size: 0.75rem;
+      color: #888;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #888;
+    }
+    .empty-state h3 {
+      margin-bottom: 0.5rem;
+      color: #aaa;
+    }
+    [x-cloak] {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header style="margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1 style="margin: 0; font-size: 1.75rem;">Watch-Dog Sentinel</h1>
+          <p style="margin: 0.25rem 0 0 0; color: #888;">Passive Monitoring Dashboard</p>
+        </div>
+        <div class="header-actions">
+          <span class="last-updated" x-data="{ updated: new Date() }" x-init="setInterval(() => updated = new Date(), 1000)">
+            Last updated: <span x-text="updated.toLocaleTimeString()"></span>
+          </span>
+        </div>
+      </div>
+    </header>
+    ${content}
+  </main>
+  <script>
+    // Alpine.js time formatting utility
+    document.addEventListener('alpine:init', () => {
+      Alpine.magic('time', () => (timestamp: number) => {
+        if (!timestamp) return 'Never';
+        const date = new Date(timestamp * 1000);
+        const now = new Date();
+        const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return date.toLocaleDateString();
+      });
+    });
+  </script>
+</body>
+</html>
+`;
+
+/**
+ * ProjectCard component - Card showing project status and checks
+ * @param project - Project data with checks
+ */
+const ProjectCard = (project: Project & { in_maintenance: boolean; checks: Array<Check & { is_stale: boolean }> }) => html`
+<div class="project-card">
+  <div class="project-header">
+    <h3 class="project-title">${project.display_name}</h3>
+    ${project.in_maintenance ? html`<span class="maintenance-badge">🚧 Maintenance</span>` : ''}
+  </div>
+  <div class="check-list">
+    ${project.checks.length === 0 ? html`
+      <p style="color: #888; font-size: 0.875rem;">No checks configured</p>
+    ` : project.checks.map(check => html`
+      <div class="check-item status-${check.status}">
+        <div>
+          <div class="check-name">${check.display_name || check.name}</div>
+          <div class="check-meta">
+            ${check.type === 'heartbeat' ? `Every ${check.interval}s` : 'Event'} • Last seen: <span x-data="{}" x-text="$time(${check.last_seen})"></span>
+          </div>
+          ${check.last_message ? html`<div class="check-meta" style="color: #aaa;">${check.last_message}</div>` : ''}
+        </div>
+        <span class="status-badge ${check.status}">${check.status}</span>
+      </div>
+    `).join('')}
+  </div>
+  <div class="maintenance-controls">
+    <button
+      hx-post="/api/maintenance/${project.id}"
+      hx-vals='{"enabled": true, "duration": 600}'
+      hx-get="/"
+      hx-target="#dashboard"
+      hx-swap="outerHTML"
+      class="outline secondary"
+    >
+      Mute 10m
+    </button>
+    <button
+      hx-post="/api/maintenance/${project.id}"
+      hx-vals='{"enabled": false}'
+      hx-get="/"
+      hx-target="#dashboard"
+      hx-swap="outerHTML"
+      class="outline contrast"
+    >
+      ${project.in_maintenance ? 'Unmute' : 'Mute'}
+    </button>
+  </div>
+</div>
+`;
+
 /**
  * GET /
- * Health check endpoint
- * Returns a simple status message to confirm the service is running
+ * Dashboard main page
+ * Renders the monitoring dashboard with all projects and checks
+ * Supports HTMX polling for auto-refresh (every 30s)
  */
-app.get('/', (c) => {
-  return c.text('Watch-Dog Sentinel Active 🟢');
+app.get('/', async (c) => {
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const isHtmx = c.req.header('HX-Request');
+
+  try {
+    // Get all projects
+    const projectsResult = await db
+      .prepare('SELECT * FROM projects ORDER BY display_name')
+      .all<Project>();
+
+    const projects = projectsResult.results;
+
+    // Get all checks
+    const checksResult = await db
+      .prepare('SELECT * FROM checks ORDER BY project_id, name')
+      .all<Check>();
+
+    const checks = checksResult.results;
+
+    // Group checks by project
+    const projectsWithChecks = projects.map((project) => ({
+      ...project,
+      in_maintenance: project.maintenance_until > now,
+      checks: checks
+        .filter((check) => check.project_id === project.id)
+        .map((check) => ({
+          ...check,
+          is_stale: check.type === 'heartbeat' && (check.last_seen + check.interval + check.grace) < now,
+        })),
+    }));
+
+    // Calculate overall stats
+    const totalChecks = checks.length;
+    const okChecks = checks.filter((c) => c.status === 'ok').length;
+    const errorChecks = checks.filter((c) => c.status === 'error').length;
+    const deadChecks = checks.filter((c) => c.status === 'dead').length;
+    const inMaintenance = projects.filter((p) => p.maintenance_until > now).length;
+
+    // Render dashboard content
+    const dashboardContent = html`
+<!-- Stats Overview -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+  <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #3498db;">
+    <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Total Checks</div>
+    <div style="font-size: 1.5rem; font-weight: 600;">${totalChecks}</div>
+  </div>
+  <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #2ecc71;">
+    <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">OK</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #2ecc71;">${okChecks}</div>
+  </div>
+  <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #e74c3c;">
+    <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Error</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #e74c3c;">${errorChecks}</div>
+  </div>
+  <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #7f8c8d;">
+    <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Dead</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #95a5a6;">${deadChecks}</div>
+  </div>
+  <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #e67e22;">
+    <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Maintenance</div>
+    <div style="font-size: 1.5rem; font-weight: 600; color: #e67e22;">${inMaintenance}</div>
+  </div>
+</div>
+
+<!-- HTMX Refresh Container -->
+<div id="dashboard" hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
+  ${projectsWithChecks.length === 0 ? html`
+    <div class="empty-state">
+      <h3>No projects registered</h3>
+      <p>Register a project via the <code>/api/config</code> endpoint to get started.</p>
+    </div>
+  ` : html`
+    <div class="dashboard-grid">
+      ${projectsWithChecks.map(ProjectCard).join('')}
+    </div>
+  `}
+</div>
+    `;
+
+    // Return full HTML for initial request, or partial for HTMX
+    if (isHtmx) {
+      return c.html(dashboardContent);
+    }
+
+    return c.html(Layout({ content: dashboardContent }));
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    const errorContent = html`
+      <div class="empty-state">
+        <h3>Error loading dashboard</h3>
+        <p>Unable to fetch project data. Please try again.</p>
+      </div>
+    `;
+
+    if (isHtmx) {
+      return c.html(errorContent);
+    }
+
+    return c.html(Layout({ content: errorContent }));
+  }
 });
 
 /**
