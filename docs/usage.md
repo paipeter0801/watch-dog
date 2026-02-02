@@ -1,70 +1,67 @@
 # Watch-Dog Sentinel 使用指南
 
+## 服務地址
+
+**Watch-Dog Sentinel URL:** `https://watch-dog.paipeter-gui.workers.dev/`
+**Admin 管理頁面:** `https://watch-dog.paipeter-gui.workers.dev/admin`
+
+---
+
 ## 概述
 
-Watch-Dog Sentinel 是一個**被動監控系統**（Dead Man's Switch）。服務主動向 Watch-Dog 報告心跳，如果停止報告，系統會發送警報。
+Watch-Dog Sentinel 是一個**被動監控系統**（Dead Man's Switch）。服務主動向 Watch-Dog 報告心跳，如果停止報告，系統會發送警報到 Slack。
+
+### 核心概念
+
+| 概念 | 說明 |
+|------|------|
+| **Project Token** | 每個項目獨立的 Token，用於客戶端 API 認證 |
+| **Slack API Token** | 全局設置，用於向 Slack 發送通知 |
+| **Monitor 開關** | 勾選=監控該檢查，不勾選=跳過（不會觸發警報） |
 
 ---
 
-## 核心概念
-
-### 1. Project Token（項目 Token）
-- 每個項目有自己獨立的 Token
-- 用於**客戶端 API 認證**
-- 發送 pulse 或 config 時需要提供
-
-### 2. Slack API Token（全局設置）
-- 用於向 Slack 發送通知
-- 在 `/admin` 的 Settings 頁面配置
-- 統一管理所有警報發送
-
-### 3. Monitor 開關
-- 勾選 = 排程檢查該項目
-- 不勾選 = 跳過該檢查（不會觸發 Slack 警報）
-
----
-
-## 快速開始
+## 快速開始（3步驟）
 
 ### 第一步：創建項目
 
-1. 訪問 `/admin`
+1. 訪問 `https://watch-dog.paipeter-gui.workers.dev/admin`
 2. 切換到 **Projects** 標籤
-3. 點擊 **New Project**
-4. 填寫：
+3. 點擊 **New Project**，填寫：
    - **Project ID**: `my-service`（小寫英文、數字、連字符）
    - **Display Name**: `我的服務`
-   - **Token**: 生成一個安全的 Token（至少 16 字元）
-5. 點擊 **Create**
+   - **Token**: 輸入或生成一個安全 Token（至少 16 字元）
+4. 點擊 **Create**
 
 ### 第二步：配置 Slack 通知
 
-1. 訪問 `/admin`
-2. 切換到 **Settings** 標籤
-3. 填寫：
-   - **Slack API Token**: `xoxb-...`（從 [Slack Apps](https://api.slack.com/apps) 獲取）
+1. 切換到 **Settings** 標籤
+2. 填寫 Slack 配置：
+   - **API Token**: `xoxb-...`（從 [Slack Apps](https://api.slack.com/apps) 獲取）
    - **Critical Channel**: 嚴重警報頻道 ID
    - **Success Channel**: 恢復通知頻道 ID
    - **Warning Channel**: 警告頻道 ID
    - **Info Channel**: 信息日誌頻道 ID
-   - **Silence Period**: 重複警報間隔時間（秒）
-4. 點擊 **Save Settings**
+   - **Silence Period**: 重複警報間隔（秒，建議 3600）
+3. 點擊 **Save Settings**
 
 ### 第三步：客戶端集成
 
-在你的服務中集成 Watch-Dog 客戶端：
+將你的服務連接到 Watch-Dog，參考下方範例。
 
-#### Python 範例
+---
+
+## Python 客戶端範例
 
 ```python
+# utils/watchdog.py
 import requests
 import threading
 
 class WatchDogClient:
-    def __init__(self, base_url: str, token: str, project_id: str):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, token: str):
+        self.base_url = "https://watch-dog.paipeter-gui.workers.dev"
         self.headers = {"Authorization": f"Bearer {token}"}
-        self.project_id = project_id
 
     def register_checks(self, checks: list):
         """註冊檢查規則"""
@@ -94,47 +91,54 @@ class WatchDogClient:
             pass
 
 # 使用範例
-wd = WatchDogClient(
-    base_url="https://watch-dog.your-domain.com",
-    token="your-project-token-here",
-    project_id="my-service"
-)
+wd = WatchDogClient(token="your-project-token-here")
 
 # 啟動時註冊
 wd.register_checks([{
     "name": "db_health",
     "display_name": "資料庫健康檢查",
     "type": "heartbeat",
-    "interval": 60,   # 60秒一次
-    "grace": 10,      # 10秒緩衝
-    "threshold": 3,   # 連續失敗3次才警報
-    "cooldown": 300   # 5分鐘內不重複警報
+    "interval": 60,
+    "grace": 10,
+    "threshold": 3,
+    "cooldown": 300
 }])
 
 # 定期發送心跳
 def health_check():
     try:
-        # 檢查資料庫
-        db.ping()
-        wd.pulse("db_health", status="ok", latency=50)
+        # 執行健康檢查
+        latency = db.check_latency()
+        wd.pulse("db_health", status="ok", latency=latency)
     except Exception as e:
         wd.pulse("db_health", status="error", message=str(e))
 
-# 每60秒執行一次
+# 每60秒執行
+# sched.add_job(health_check, 'interval', seconds=60)
 ```
 
-#### Node.js / TypeScript 範例
+---
+
+## Node.js / TypeScript 範例
 
 ```typescript
-class WatchDog {
-  constructor(
-    private baseUrl: string,
-    private token: string
-  ) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
-  }
+// utils/watchdog.ts
+type CheckConfig = {
+  name: string;
+  display_name: string;
+  type: 'heartbeat' | 'event';
+  interval?: number;
+  grace?: number;
+  threshold?: number;
+  cooldown?: number;
+};
 
-  async register(checks: any[]) {
+export class WatchDog {
+  private baseUrl = "https://watch-dog.paipeter-gui.workers.dev";
+
+  constructor(private token: string) {}
+
+  async register(checks: CheckConfig[]) {
     await fetch(`${this.baseUrl}/api/config`, {
       method: 'PUT',
       headers: {
@@ -162,48 +166,54 @@ class WatchDog {
   }
 }
 
-// 使用範例
-const wd = new WatchDog(
-  "https://watch-dog.your-domain.com",
-  "your-project-token-here"
-);
+// 使用
+const wd = new WatchDog('your-project-token-here');
 
 await wd.register([{
-  name: "api_server",
-  display_name: "API Server",
-  type: "heartbeat",
+  name: 'api_server',
+  display_name: 'API Server',
+  type: 'heartbeat',
   interval: 30,
   grace: 5
 }]);
 
-// 定期發送心跳
 setInterval(() => {
-  wd.pulse("api_server", "ok", "Server running");
+  wd.pulse('api_server', 'ok', 'Server running');
 }, 30000);
 ```
 
 ---
 
-## Admin 管理
+## Shell Script 範例
 
-### 訪問 `/admin`
+```bash
+#!/bin/bash
 
-| 標籤 | 功能 |
-|------|------|
-| **Settings** | 配置 Slack Token 和頻道 ID |
-| **Projects** | 查看、創建、刪除項目 |
-| **Checks** | 查看所有檢查、啟用/禁用監控、刪除檢查 |
+WD_URL="https://watch-dog.paipeter-gui.workers.dev"
+TOKEN="your-project-token-here"
 
-### Checks 欄位說明
+# 執行任務
+START=$(date +%s%3N)
+# your_command_here
+EXIT_CODE=$?
+END=$(date +%s%3N)
+LATENCY=$((END-START))
 
-| 欄位 | 說明 |
-|------|------|
-| **Type** | `heartbeat` = 定期心跳, `event` = 事件觸發 |
-| **Interval** | 心跳間隔（秒） |
-| **Grace** | 寬限期（秒），超過 interval+grace 才算逾期 |
-| **Threshold** | 連續失敗幾次才觸發警報 |
-| **Cooldown** | 警報冷卻時間（秒），避免重複通知 |
-| **Monitor** | 勾選=監控，不勾選=暫停監控 |
+# 回報結果
+if [ $EXIT_CODE -eq 0 ]; then
+  curl -X POST "$WD_URL/api/pulse" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"check_name":"backup","status":"ok","latency":'$LATENCY'}' \
+    --max-time 5 > /dev/null 2>&1 &
+else
+  curl -X POST "$WD_URL/api/pulse" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"check_name":"backup","status":"error","message":"Failed"}' \
+    --max-time 5 > /dev/null 2>&1 &
+fi
+```
 
 ---
 
@@ -224,7 +234,7 @@ Content-Type: application/json
 }
 ```
 
-### 註冊/更新檢查規則
+### 註冊檢查規則
 
 ```bash
 PUT /api/config
@@ -248,12 +258,36 @@ Content-Type: application/json
 
 ---
 
-## 安全建議
+## Admin 管理頁面
 
-1. **Project Token** - 保密，不要提交到公開代碼庫
-2. **Slack API Token** - 使用 Bot Token，不要使用 User Token
-3. **傳輸** - 使用 HTTPS
-4. **存儲** - Token 存儲在環境變量或密鑰管理服務中
+訪問 `https://watch-dog.paipeter-gui.workers.dev/admin`
+
+### Settings 標籤
+- 配置 Slack API Token 和頻道 ID
+- 設定警報冷卻時間
+
+### Projects 標籤
+- 查看所有項目
+- 創建新項目
+- 刪除項目
+
+### Checks 標籤
+- 查看所有檢查狀態
+- **Monitor checkbox** - 勾選=監控，不勾選=暫停
+- 刪除檢查
+
+---
+
+## 檢查參數說明
+
+| 參數 | 說明 |
+|------|------|
+| **Type** | `heartbeat` = 定期心跳, `event` = 事件觸發 |
+| **Interval** | 心跳間隔（秒） |
+| **Grace** | 寬限期（秒），超過 interval+grace 才算逾期 |
+| **Threshold** | 連續失敗幾次才觸發警報 |
+| **Cooldown** | 警報冷卻時間（秒），避免重複通知 |
+| **Monitor** | 勾選=監控，不勾選=暫停監控 |
 
 ---
 
@@ -261,7 +295,7 @@ Content-Type: application/json
 
 ### 沒有收到 Slack 通知？
 1. 檢查 Settings 中的 Slack API Token 是否正確
-2. 檢查頻道 ID 是否正確（右鍵頻道 → Copy Link → 提取最後一段 ID）
+2. 檢查頻道 ID 是否正確
 3. 檢查該 Check 的 Monitor 是否勾選
 4. 查看 Dashboard 確認 Check 狀態
 
@@ -269,3 +303,11 @@ Content-Type: application/json
 1. 確認客戶端正在發送 pulse
 2. 檢查 Token 是否正確
 3. 查看 Interval 和 Grace 設定是否合理
+
+---
+
+## 安全建議
+
+1. **Token 保密** - 不要提交到公開代碼庫，使用環境變量
+2. **使用 HTTPS** - 所有通訊都經過 HTTPS 加密
+3. **Token 強度** - 至少 16 字元，隨機生成
