@@ -898,7 +898,7 @@ app.get('/admin', async (c) => {
               >Delete</button>
             </td>
           </tr>
-        `).join('')}
+        `)}
       </tbody>
     </table>
   </div>
@@ -945,7 +945,7 @@ app.get('/admin', async (c) => {
               >Delete</button>
             </td>
           </tr>
-        `).join('')}
+        `)}
       </tbody>
     </table>
   </div>
