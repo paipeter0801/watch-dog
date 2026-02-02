@@ -841,9 +841,7 @@ app.get('/admin', async (c) => {
                 hx-delete="/admin/projects/${p.id}"
                 hx-confirm="Are you sure? This will delete the project and all its checks."
                 hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
-                hx-get="/admin"
-                hx-target="body"
-                hx-swap="outerHTML"
+                hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
                 class="outline secondary"
                 style="font-size: 0.75rem;"
               >Delete</button>
@@ -890,9 +888,7 @@ app.get('/admin', async (c) => {
                 hx-delete="/admin/checks/${check.id}"
                 hx-confirm="Are you sure?"
                 hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
-                hx-get="/admin"
-                hx-target="body"
-                hx-swap="outerHTML"
+                hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
                 class="outline secondary"
                 style="font-size: 0.75rem;"
               >Delete</button>
@@ -939,7 +935,8 @@ app.post('/admin/settings/slack', async (c) => {
       silence_period_seconds,
     } = body;
 
-    await updateSlackSettings(db, {
+    // Update Slack settings and check for success
+    const slackSuccess = await updateSlackSettings(db, {
       api_token: api_token as string,
       channel_critical: channel_critical as string,
       channel_success: channel_success as string,
@@ -947,8 +944,24 @@ app.post('/admin/settings/slack', async (c) => {
       channel_info: channel_info as string,
     });
 
-    // Update silence period separately
-    await updateSetting(db, 'silence_period_seconds', silence_period_seconds as string);
+    if (!slackSuccess) {
+      return c.html(html`
+        <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem; margin-bottom: 1rem;">
+          Failed to save Slack settings. Please try again.
+        </div>
+      `);
+    }
+
+    // Update silence period separately and check for success
+    const silenceSuccess = await updateSetting(db, 'silence_period_seconds', silence_period_seconds as string);
+
+    if (!silenceSuccess) {
+      return c.html(html`
+        <div style="padding: 1rem; background: #e74c3c; color: white; border-radius: 0.5rem; margin-bottom: 1rem;">
+          Failed to save silence period. Please try again.
+        </div>
+      `);
+    }
 
     // Return success message with HTMX redirect
     return c.html(html`
@@ -977,14 +990,21 @@ app.delete('/admin/projects/:projectId', async (c) => {
 
   try {
     // Delete all checks for this project first
-    await db.prepare('DELETE FROM checks WHERE project_id = ?').bind(projectId).run();
+    const checksResult = await db.prepare('DELETE FROM checks WHERE project_id = ?').bind(projectId).run();
 
     // Delete the project
-    await db.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
+    const projectResult = await db.prepare('DELETE FROM projects WHERE id = ?').bind(projectId).run();
 
     // Also delete logs for this project's checks
-    await db.prepare("DELETE FROM logs WHERE check_id LIKE ?").bind(`${projectId}:%`).run();
+    const logsResult = await db.prepare("DELETE FROM logs WHERE check_id LIKE ?").bind(`${projectId}:%`).run();
 
+    // Verify that the project was actually deleted
+    if (!projectResult.success || projectResult.meta.changes === 0) {
+      return c.json({ error: 'Project not found or already deleted' }, 404);
+    }
+
+    // Return JSON with custom header for HTMX to handle redirect
+    c.header('X-Deleted', 'true');
     return c.json({ success: true, project_id: projectId });
   } catch (error) {
     console.error('Project delete error:', error);
@@ -1002,11 +1022,18 @@ app.delete('/admin/checks/:checkId', async (c) => {
 
   try {
     // Delete the check
-    await db.prepare('DELETE FROM checks WHERE id = ?').bind(checkId).run();
+    const checkResult = await db.prepare('DELETE FROM checks WHERE id = ?').bind(checkId).run();
 
     // Delete logs for this check
-    await db.prepare('DELETE FROM logs WHERE check_id = ?').bind(checkId).run();
+    const logsResult = await db.prepare('DELETE FROM logs WHERE check_id = ?').bind(checkId).run();
 
+    // Verify that the check was actually deleted
+    if (!checkResult.success || checkResult.meta.changes === 0) {
+      return c.json({ error: 'Check not found or already deleted' }, 404);
+    }
+
+    // Return JSON with custom header for HTMX to handle redirect
+    c.header('X-Deleted', 'true');
     return c.json({ success: true, check_id: checkId });
   } catch (error) {
     console.error('Check delete error:', error);
@@ -1034,7 +1061,7 @@ app.get('/admin/checks/:checkId/edit', async (c) => {
 
     return c.html(html`
 <div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-  <div @click.away="open = false; document.getElementById('modal-container').innerHTML = ''" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
+  <div @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
     <h3>Edit Check</h3>
     <form hx-post="/admin/checks/${checkId}" hx-target="body" hx-swap="outerHTML">
       <label>
@@ -1066,10 +1093,18 @@ app.get('/admin/checks/:checkId/edit', async (c) => {
       </label>
       <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
         <button type="submit" class="primary">Save</button>
-        <button type="button" class="outline secondary" @click="open = false; document.getElementById('modal-container').innerHTML = ''">Cancel</button>
+        <button type="button" class="outline secondary" @click="closeModal()">Cancel</button>
       </div>
     </form>
   </div>
+  <script>
+    function closeModal() {
+      const container = document.getElementById('modal-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+    }
+  </script>
 </div>
     `);
   } catch (error) {
@@ -1097,6 +1132,15 @@ app.post('/admin/checks/:checkId', async (c) => {
       cooldown,
     } = body;
 
+    // Parse and validate numeric inputs - use defaults if parsing fails
+    const parsedInterval = interval ? Math.max(10, parseInt(interval as string, 10) || 300) : 300;
+    const parsedGrace = grace ? Math.max(0, parseInt(grace as string, 10) || 60) : 60;
+    const parsedThreshold = threshold ? Math.max(1, parseInt(threshold as string, 10) || 1) : 1;
+    const parsedCooldown = cooldown ? Math.max(0, parseInt(cooldown as string, 10) || 900) : 900;
+
+    // Validate type
+    const validType = type === 'heartbeat' || type === 'event' ? type : 'heartbeat';
+
     await db.prepare(`
       UPDATE checks SET
         display_name = ?,
@@ -1108,11 +1152,11 @@ app.post('/admin/checks/:checkId', async (c) => {
       WHERE id = ?
     `).bind(
       display_name,
-      type,
-      interval ? parseInt(interval as string, 10) : 300,
-      grace ? parseInt(grace as string, 10) : 60,
-      threshold ? parseInt(threshold as string, 10) : 1,
-      cooldown ? parseInt(cooldown as string, 10) : 900,
+      validType,
+      parsedInterval,
+      parsedGrace,
+      parsedThreshold,
+      parsedCooldown,
       checkId
     ).run();
 
@@ -1131,7 +1175,7 @@ app.post('/admin/checks/:checkId', async (c) => {
 app.post('/admin/projects/new-dialog', async (c) => {
   return c.html(html`
 <div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-  <div @click.away="open = false; document.getElementById('modal-container').innerHTML = ''" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
+  <div @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
     <h3>New Project</h3>
     <form hx-post="/admin/projects/new" hx-target="body" hx-swap="outerHTML">
       <label>
@@ -1154,10 +1198,18 @@ app.post('/admin/projects/new-dialog', async (c) => {
       </label>
       <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
         <button type="submit" class="primary">Create</button>
-        <button type="button" class="outline secondary" @click="open = false; document.getElementById('modal-container').innerHTML = ''">Cancel</button>
+        <button type="button" class="outline secondary" @click="closeModal()">Cancel</button>
       </div>
     </form>
   </div>
+  <script>
+    function closeModal() {
+      const container = document.getElementById('modal-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+    }
+  </script>
 </div>
   `);
 });
