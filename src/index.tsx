@@ -816,9 +816,54 @@ export const scheduled = async (
       const now = Math.floor(Date.now() / 1000);
 
       try {
+        // ===== Self-Monitoring: Watch-Dog monitors itself =====
+        // Send pulse for the self-monitoring check (runs every minute)
+        const selfCheckId = 'watch-dog:self-health';
+        const selfProject = {
+          id: 'watch-dog',
+          token: '',
+          display_name: 'Watch-Dog Sentinel',
+          slack_webhook: null,
+          maintenance_until: 0,
+          created_at: now,
+        };
+
+        const selfCheck = await env.DB
+          .prepare('SELECT * FROM checks WHERE id = ?')
+          .bind(selfCheckId)
+          .first<Check>();
+
+        if (selfCheck) {
+          // Update self-health with OK status (Cron is running!)
+          await env.DB
+            .prepare(`
+              UPDATE checks SET
+                status = 'ok',
+                last_seen = ?,
+                failure_count = 0,
+                last_message = 'Cron heartbeat received'
+              WHERE id = ?
+            `)
+            .bind(now, selfCheckId)
+            .run();
+
+          // Log the self-pulse
+          await env.DB
+            .prepare(`
+              INSERT INTO logs (check_id, status, latency, message, created_at)
+              VALUES (?, 'ok', 0, ?, ?)
+            `)
+            .bind(selfCheckId, 'Self-monitoring pulse via Cron', now)
+            .run();
+        }
+
+        // ===== Find dead checks from other projects =====
         const deadChecks = await findDeadChecks(env.DB, now);
 
         for (const check of deadChecks) {
+          // Skip self-monitoring check (we already handled it above)
+          if (check.id === selfCheckId) continue;
+
           const project = {
             id: check.project_id,
             token: check.token,
