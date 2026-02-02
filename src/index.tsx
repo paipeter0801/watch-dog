@@ -194,6 +194,57 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
       background: rgba(127, 140, 141, 0.2);
       color: #95a5a6;
     }
+    /* Admin dashboard styles */
+    .admin-dashboard .grid {
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+    .admin-dashboard article {
+      border: 1px solid #333;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .admin-dashboard button.close-button {
+      float: right;
+    }
+    .admin-dialog dialog {
+      border: 1px solid #333;
+      border-radius: 0.5rem;
+      max-width: 500px;
+    }
+    .admin-dialog dialog[open] {
+      display: flex;
+    }
+    .status-ok {
+      color: #2ecc71;
+    }
+    .project-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .project-list article {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: #2a2a2a;
+      border-radius: 0.375rem;
+    }
+    .project-list article header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .project-list article details {
+      font-size: 0.8rem;
+    }
+    .project-list article code {
+      background: #333;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+    }
   </style>
 </head>
 <body>
