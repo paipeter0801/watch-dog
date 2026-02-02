@@ -932,8 +932,7 @@ app.get('/admin', async (c) => {
         .map((p: any) => {
           const statusOrder: any = { dead: 3, error: 2, ok: 1 };
           const sortedChecks = [...p.checks].sort((a: any, b: any) => statusOrder[b.status] - statusOrder[a.status]);
-          return html`
-    <div class="project-card" x-data="{ expanded: false }" x-show="filterProject === 'all' || filterProject === '${p.id}'">
+          return html`<div class="project-card" x-data="{ expanded: false }" x-show="filterProject === 'all' || filterProject === '${p.id}'">
       <div
         @click="expanded = !expanded"
         style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; border-radius: 0.5rem; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
@@ -999,8 +998,7 @@ app.get('/admin', async (c) => {
           </tbody>
         </table>
       </div>
-    </div>
-          `;
+    </div>`;
         })
         .join('')}
     </div>
