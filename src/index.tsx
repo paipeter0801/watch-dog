@@ -372,7 +372,22 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
         border-radius: 0.5rem;
         margin-bottom: 1rem;
         overflow: hidden;
+        width: 100%;
+        box-sizing: border-box;
       }
+
+      /* Checks expanded content - scrollable */
+      .checks-expanded-content {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+      }
+
+      /* Checks table */
+      .checks-table {
+        min-width: max-content;
+      }
+    }
     }
 
     /* Admin Dashboard - Tablet */
@@ -1094,9 +1109,8 @@ app.get('/admin', async (c) => {
         <span class="status-badge ${p.projectStatus}">${p.projectStatus.toUpperCase()}</span>
       </div>
 
-      <div x-show="expanded" style="padding: 0 1rem 1rem 1rem; background: #1a1a1a;">
-        <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
-          <table class="checks-table striped" style="font-size: 0.8rem;">
+      <div class="checks-expanded-content" x-show="expanded" style="padding: 0 1rem 1rem 1rem; background: #1a1a1a;">
+        <table class="checks-table striped" style="font-size: 0.8rem; width: 100%; min-width: max-content;">
             <thead>
               <tr>
                 <th>Check Name</th>
@@ -1145,7 +1159,6 @@ app.get('/admin', async (c) => {
               `).join(''))}
             </tbody>
           </table>
-        </div>
       </div>
     </div>`;
         })
