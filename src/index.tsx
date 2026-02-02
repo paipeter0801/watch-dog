@@ -211,9 +211,25 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
       border: 1px solid #333;
       border-radius: 0.5rem;
       max-width: 500px;
+      width: 90%;
     }
     .admin-dialog dialog[open] {
       display: flex;
+    }
+
+    /* Dialog mobile responsiveness */
+    @media (max-width: 639px) {
+      .admin-dialog dialog {
+        max-width: 95vw;
+        width: 95%;
+      }
+
+      /* Inline-styled modal from new-project endpoint */
+      .modal-dialog {
+        max-width: 95vw !important;
+        width: 95% !important;
+        padding: 1rem !important;
+      }
     }
     .status-ok {
       color: #2ecc71;
@@ -1407,7 +1423,7 @@ app.post('/admin/checks/:checkId', async (c) => {
 app.post('/admin/projects/new-dialog', async (c) => {
   return c.html(html`
 <div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-  <div @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto;">
+  <div class="modal-dialog" @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto;">
     <h3>New Project</h3>
     <form hx-post="/admin/projects/new" hx-target="body" hx-swap="outerHTML">
       <label>
