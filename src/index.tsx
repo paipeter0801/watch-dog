@@ -894,7 +894,7 @@ app.get('/admin', async (c) => {
         </tr>
       </thead>
       <tbody>
-        ${projectsWithChecks.map(p => html`
+        ${raw(projectsWithChecks.map(p => html`
           <tr>
             <td>${p.display_name}</td>
             <td><code>${p.id}</code></td>
@@ -911,7 +911,7 @@ app.get('/admin', async (c) => {
               >Delete</button>
             </td>
           </tr>
-        `)}
+        `).join(''))}
       </tbody>
     </table>
   </div>
@@ -922,7 +922,7 @@ app.get('/admin', async (c) => {
       <h2 style="margin: 0;">All Checks</h2>
       <select x-model="filterProject" style="padding: 0.5rem;">
         <option value="all">所有專案</option>
-        ${projects.map(p => html`<option value="${p.id}">${p.display_name}</option>`).join('')}
+        ${raw(projects.map(p => html`<option value="${p.id}">${p.display_name}</option>`).join(''))}
       </select>
     </div>
 
