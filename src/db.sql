@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS checks (
     last_alert_at INTEGER DEFAULT 0,
     last_message TEXT,
 
+    -- Monitoring control (if false, watcher skips this check)
+    monitor INTEGER DEFAULT 1,
+
     FOREIGN KEY(project_id) REFERENCES projects(id)
 );
 

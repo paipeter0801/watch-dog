@@ -906,43 +906,50 @@ app.get('/admin', async (c) => {
   <!-- Checks Tab -->
   <div x-show="openTab === 'checks'" x-cloak>
     <h2>All Checks</h2>
-    <table class="striped">
+    <table class="striped" style="font-size: 0.85rem;">
       <thead>
         <tr>
           <th>Display Name</th>
-          <th>Check ID</th>
           <th>Type</th>
           <th>Interval</th>
+          <th>Grace</th>
+          <th>Threshold</th>
+          <th>Cooldown</th>
           <th>Status</th>
-          <th>Actions</th>
+          <th>Monitor</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         ${checks.map(check => html`
           <tr>
             <td>${check.display_name || check.name}</td>
-            <td><code>${check.id}</code></td>
             <td>${check.type}</td>
-            <td>${check.type === 'heartbeat' ? `${check.interval}s` : 'N/A'}</td>
+            <td>${check.interval}s</td>
+            <td>${check.grace}s</td>
+            <td>${check.threshold}</td>
+            <td>${check.cooldown}s</td>
             <td>
               <span class="status-badge ${check.status}">${check.status}</span>
             </td>
+            <td style="text-align: center;">
+              <input
+                type="checkbox"
+                ${check.monitor ? 'checked' : ''}
+                hx-post="/admin/checks/${check.id}/toggle"
+                hx-vals='{"monitor": ${check.monitor ? 0 : 1}}'
+                hx-swap="none"
+              />
+            </td>
             <td>
-              <button
-                hx-get="/admin/checks/${check.id}/edit"
-                hx-target="#modal-container"
-                hx-swap="innerHTML"
-                class="outline secondary"
-                style="font-size: 0.75rem;"
-              >Edit</button>
               <button
                 hx-delete="/admin/checks/${check.id}"
                 hx-confirm="Are you sure?"
                 hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
                 hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
-                class="outline secondary"
-                style="font-size: 0.75rem;"
-              >Delete</button>
+                class="outline secondary contrast"
+                style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
+              >×</button>
             </td>
           </tr>
         `)}
@@ -1089,6 +1096,28 @@ app.delete('/admin/checks/:checkId', async (c) => {
   } catch (error) {
     console.error('Check delete error:', error);
     return c.json({ error: 'Failed to delete check' }, 500);
+  }
+});
+
+/**
+ * POST /admin/checks/:checkId/toggle
+ * Toggle monitor status for a check
+ */
+app.post('/admin/checks/:checkId/toggle', async (c) => {
+  const db = c.env.DB;
+  const checkId = c.req.param('checkId');
+
+  try {
+    const body = await c.req.parseBody();
+    const monitorValue = body.monitor as string | number;
+    const monitor = monitorValue === '1' || monitorValue === 1 ? 1 : 0;
+
+    await db.prepare('UPDATE checks SET monitor = ? WHERE id = ?').bind(monitor, checkId).run();
+
+    return c.json({ success: true, check_id: checkId, monitor });
+  } catch (error) {
+    console.error('Check toggle error:', error);
+    return c.json({ error: 'Failed to toggle check' }, 500);
   }
 });
 

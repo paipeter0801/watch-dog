@@ -32,6 +32,7 @@ export interface Check {
   failure_count: number;
   last_alert_at: number;
   last_message: string | null;
+  monitor: number; // 1 = enabled, 0 = disabled
 }
 
 export interface Log {

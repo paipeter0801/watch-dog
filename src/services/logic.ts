@@ -110,6 +110,7 @@ export async function findDeadChecks(
       JOIN projects p ON c.project_id = p.id
       WHERE c.type = 'heartbeat'
       AND c.status != 'dead'
+      AND c.monitor = 1
       AND (c.last_seen + c.interval + c.grace) < ?`
     )
     .bind(now)
