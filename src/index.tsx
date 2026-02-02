@@ -3,8 +3,9 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
-import { processCheckResult } from './services/logic';
+import { processCheckResult, findDeadChecks } from './services/logic';
 
 // Type for Hono bindings
 type AppBindings = {
@@ -453,6 +454,61 @@ app.get('/api/status/:projectId', async (c) => {
   }
 });
 
+/**
+ * Cron Trigger Handler
+ * Runs every minute to find dead checks and trigger alerts
+ *
+ * A check is considered "dead" when:
+ * - It's a heartbeat-type check
+ * - last_seen + interval + grace < now
+ * - Current status is not already 'dead'
+ */
+export const scheduled = async (
+  event: ScheduledEvent,
+  env: AppBindings,
+  ctx: ExecutionContext
+): Promise<void> => {
+  ctx.waitUntil(
+    (async () => {
+      const now = Math.floor(Date.now() / 1000);
+
+      try {
+        const deadChecks = await findDeadChecks(env.DB, now);
+
+        for (const check of deadChecks) {
+          const project = {
+            id: check.project_id,
+            token: check.token,
+            display_name: check.project_name,
+            slack_webhook: check.slack_webhook,
+            maintenance_until: check.maintenance_until,
+            created_at: check.created_at,
+          };
+
+          await processCheckResult(
+            env.DB,
+            env,
+            check,
+            project,
+            'dead',
+            `Heartbeat missed! Last seen: ${now - check.last_seen}s ago`
+          );
+        }
+
+        // Clean old logs (7 days)
+        await env.DB
+          .prepare('DELETE FROM logs WHERE created_at < ?')
+          .bind(now - 604800)
+          .run();
+      } catch (e) {
+        console.error('Cron error:', e);
+      }
+    })()
+  );
+};
+
 // Export the app for Cloudflare Workers
-// Note: The scheduled handler will be added in the next task
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled,
+};

@@ -102,10 +102,10 @@ export async function processCheckResult(
 export async function findDeadChecks(
   db: D1Database,
   now: number
-): Promise<Array<Check & { project_name: string; maintenance_until: number; slack_webhook: string | null }>> {
+): Promise<Array<Check & { project_name: string; maintenance_until: number; slack_webhook: string | null; token: string; created_at: number }>> {
   const result = await db
     .prepare(
-      `SELECT c.*, p.display_name as project_name, p.maintenance_until, p.slack_webhook
+      `SELECT c.*, p.display_name as project_name, p.maintenance_until, p.slack_webhook, p.token, p.created_at
       FROM checks c
       JOIN projects p ON c.project_id = p.id
       WHERE c.type = 'heartbeat'
