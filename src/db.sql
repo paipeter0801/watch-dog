@@ -1,0 +1,47 @@
+-- Projects table: manages tokens and global maintenance state
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    slack_webhook TEXT,
+    maintenance_until INTEGER DEFAULT 0,
+    created_at INTEGER DEFAULT (unixepoch())
+);
+
+-- Checks table: defines rules and current state
+CREATE TABLE IF NOT EXISTS checks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    display_name TEXT,
+    type TEXT NOT NULL,
+
+    -- SLA rules
+    interval INTEGER DEFAULT 300,
+    grace INTEGER DEFAULT 60,
+    threshold INTEGER DEFAULT 1,
+    cooldown INTEGER DEFAULT 900,
+
+    -- State
+    last_seen INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'ok',
+    failure_count INTEGER DEFAULT 0,
+    last_alert_at INTEGER DEFAULT 0,
+    last_message TEXT,
+
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+-- Logs table (periodically cleaned)
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    check_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    latency INTEGER,
+    message TEXT,
+    created_at INTEGER DEFAULT (unixepoch())
+);
+
+-- Indexes for query optimization
+CREATE INDEX IF NOT EXISTS idx_checks_project ON checks(project_id);
+CREATE INDEX IF NOT EXISTS idx_logs_check_id ON logs(check_id);
