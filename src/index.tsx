@@ -14,6 +14,8 @@ type AppBindings = {
   SLACK_API_TOKEN: string;
   SLACK_CHANNEL_CRITICAL: string;
   SLACK_CHANNEL_SUCCESS: string;
+  SLACK_CHANNEL_WARNING: string;
+  SLACK_CHANNEL_INFO: string;
   SLACK_SILENCE_PERIOD_SECONDS?: string;
 };
 
@@ -55,7 +57,6 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap: 1.5rem;
-      margin-top: 1.5rem;
     }
     .project-card {
       border: 1px solid #333;
@@ -245,8 +246,8 @@ const ProjectCard = (project: Project & { in_maintenance: boolean; checks: Array
       hx-post="/api/maintenance/${project.id}"
       hx-vals='{"enabled": true, "duration": 600}'
       hx-get="/"
-      hx-target="#dashboard"
-      hx-swap="outerHTML"
+      hx-target="#main"
+      hx-swap="innerHTML"
       class="outline secondary"
     >
       Mute 10m
@@ -255,8 +256,8 @@ const ProjectCard = (project: Project & { in_maintenance: boolean; checks: Array
       hx-post="/api/maintenance/${project.id}"
       hx-vals='{"enabled": false}'
       hx-get="/"
-      hx-target="#dashboard"
-      hx-swap="outerHTML"
+      hx-target="#main"
+      hx-swap="innerHTML"
       class="outline contrast"
     >
       ${project.in_maintenance ? 'Unmute' : 'Mute'}
@@ -310,9 +311,8 @@ app.get('/', async (c) => {
     const deadChecks = checks.filter((c) => c.status === 'dead').length;
     const inMaintenance = projects.filter((p) => p.maintenance_until > now).length;
 
-    // Render dashboard content
-    const dashboardContent = html`
-<!-- Stats Overview -->
+    // Render stats cards (only for full page)
+    const statsCards = html`
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
   <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #3498db;">
     <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Total Checks</div>
@@ -334,27 +334,32 @@ app.get('/', async (c) => {
     <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Maintenance</div>
     <div style="font-size: 1.5rem; font-weight: 600; color: #e67e22;">${inMaintenance}</div>
   </div>
-</div>
+</div>`;
 
-<!-- HTMX Refresh Container -->
-<div id="dashboard" hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
-  ${projectsWithChecks.length === 0 ? html`
-    <div class="empty-state">
-      <h3>No projects registered</h3>
-      <p>Register a project via the <code>/api/config</code> endpoint to get started.</p>
-    </div>
-  ` : html`
-    <div class="dashboard-grid">
-      ${projectsWithChecks.map(p => ProjectCard(p))}
-    </div>
-  `}
-</div>
+    // Render project grid
+    const projectGrid = projectsWithChecks.length === 0 ? html`
+      <div class="empty-state">
+        <h3>No projects registered</h3>
+        <p>Register a project via the <code>/api/config</code> endpoint to get started.</p>
+      </div>
+    ` : html`
+      <div class="dashboard-grid">
+        ${projectsWithChecks.map(p => ProjectCard(p))}
+      </div>
     `;
 
-    // Return full HTML for initial request, or partial for HTMX
+    // HTMX request: only return the project grid (refresh stats via page reload)
     if (isHtmx) {
-      return c.html(dashboardContent);
+      return c.html(projectGrid);
     }
+
+    // Full page: stats + grid
+    const dashboardContent = html`
+${statsCards}
+<div id="dashboard" hx-get="/" hx-trigger="every 30s" hx-swap="none" _="on htmx:afterRequest if window.location.hash === '' then location.reload()">
+  ${projectGrid}
+</div>
+    `;
 
     return c.html(Layout({ content: dashboardContent }));
   } catch (error) {
@@ -377,31 +382,6 @@ app.get('/', async (c) => {
 /**
  * PUT /api/config
  * Register or update project and check configurations
- *
- * This endpoint supports auto-registration from clients:
- * - Creates/updates project with provided token
- * - Upserts check definitions (idempotent)
- *
- * Headers:
- *   - X-Project-Token: Authentication token for the project
- *
- * Body:
- *   {
- *     "project_id": "my-service",
- *     "display_name": "My API Service",
- *     "slack_webhook": "https://hooks.slack.com/...",
- *     "checks": [
- *       {
- *         "name": "heartbeat",
- *         "display_name": "Main Health Check",
- *         "type": "heartbeat",
- *         "interval": 300,
- *         "grace": 60,
- *         "threshold": 2,
- *         "cooldown": 900
- *       }
- *     ]
- *   }
  */
 app.put('/api/config', async (c) => {
   const db = c.env.DB;
@@ -467,11 +447,11 @@ app.put('/api/config', async (c) => {
 
       // Validate check config
       if (!name || !type) {
-        continue; // Skip invalid checks
+        continue;
       }
 
       if (type !== 'heartbeat' && type !== 'event') {
-        continue; // Skip invalid check types
+        continue;
       }
 
       const checkId = `${project_id}:${name}`;
@@ -527,20 +507,6 @@ app.put('/api/config', async (c) => {
 /**
  * POST /api/pulse
  * Receive heartbeat pulse from a service
- *
- * This endpoint is called by monitored services to report their status.
- * It updates the check's last_seen timestamp and processes the result.
- *
- * Headers:
- *   - X-Project-Token: Authentication token for the project
- *
- * Body:
- *   {
- *     "check_name": "heartbeat",
- *     "status": "ok",
- *     "message": "Service running normally",
- *     "latency": 45
- *   }
  */
 app.post('/api/pulse', async (c) => {
   const db = c.env.DB;
@@ -636,14 +602,6 @@ app.post('/api/pulse', async (c) => {
 /**
  * POST /api/maintenance/:projectId
  * Toggle maintenance mode for a project
- *
- * When in maintenance mode, alerts are suppressed for all checks in the project.
- *
- * Body:
- *   {
- *     "duration": 3600,  // Duration in seconds (optional)
- *     "enabled": true     // true to enable, false to disable
- *   }
  */
 app.post('/api/maintenance/:projectId', async (c) => {
   const db = c.env.DB;
@@ -667,17 +625,13 @@ app.post('/api/maintenance/:projectId', async (c) => {
     let newMaintenanceUntil: number;
 
     if (enabled === false) {
-      // Explicitly disable maintenance mode
       newMaintenanceUntil = 0;
     } else if (enabled === true) {
-      // Explicitly enable maintenance mode
-      const dur = duration ?? 3600; // Default 1 hour
+      const dur = duration ?? 3600;
       newMaintenanceUntil = now + dur;
     } else if (duration !== undefined) {
-      // Toggle: set to now + duration
       newMaintenanceUntil = now + duration;
     } else {
-      // Toggle: if currently in maintenance, disable; otherwise enable for 1 hour
       if (project.maintenance_until > now) {
         newMaintenanceUntil = 0;
       } else {
@@ -707,30 +661,24 @@ app.post('/api/maintenance/:projectId', async (c) => {
 /**
  * GET /api/status
  * Get all projects and their checks
- *
- * Returns the current status of all monitored projects and checks.
- * This is used by the dashboard to display the monitoring grid.
  */
 app.get('/api/status', async (c) => {
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
 
   try {
-    // Get all projects
     const projectsResult = await db
       .prepare('SELECT * FROM projects ORDER BY display_name')
       .all<Project>();
 
     const projects = projectsResult.results;
 
-    // Get all checks
     const checksResult = await db
       .prepare('SELECT * FROM checks ORDER BY project_id, name')
       .all<Check>();
 
     const checks = checksResult.results;
 
-    // Group checks by project
     const projectsWithChecks = projects.map((project) => ({
       ...project,
       in_maintenance: project.maintenance_until > now,
@@ -762,7 +710,6 @@ app.get('/api/status/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
 
   try {
-    // Get project
     const project = await db
       .prepare('SELECT * FROM projects WHERE id = ?')
       .bind(projectId)
@@ -772,7 +719,6 @@ app.get('/api/status/:projectId', async (c) => {
       return c.json({ error: 'Project not found' }, 404);
     }
 
-    // Get checks for this project
     const checksResult = await db
       .prepare('SELECT * FROM checks WHERE project_id = ? ORDER BY name')
       .bind(projectId)
@@ -800,11 +746,6 @@ app.get('/api/status/:projectId', async (c) => {
 /**
  * Cron Trigger Handler
  * Runs every minute to find dead checks and trigger alerts
- *
- * A check is considered "dead" when:
- * - It's a heartbeat-type check
- * - last_seen + interval + grace < now
- * - Current status is not already 'dead'
  */
 export const scheduled = async (
   event: ScheduledEvent,
@@ -817,7 +758,6 @@ export const scheduled = async (
 
       try {
         // ===== Self-Monitoring: Watch-Dog monitors itself =====
-        // Send pulse for the self-monitoring check (runs every minute)
         const selfCheckId = 'watch-dog:self-health';
         const selfProject = {
           id: 'watch-dog',
@@ -861,7 +801,6 @@ export const scheduled = async (
         const deadChecks = await findDeadChecks(env.DB, now);
 
         for (const check of deadChecks) {
-          // Skip self-monitoring check (we already handled it above)
           if (check.id === selfCheckId) continue;
 
           const project = {
