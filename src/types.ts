@@ -3,6 +3,8 @@ export interface Env {
   SLACK_API_TOKEN: string;
   SLACK_CHANNEL_CRITICAL: string;
   SLACK_CHANNEL_SUCCESS: string;
+  SLACK_CHANNEL_WARNING: string;
+  SLACK_CHANNEL_INFO: string;
   SLACK_SILENCE_PERIOD_SECONDS?: string;
 }
 
