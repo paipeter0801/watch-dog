@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     token TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    slack_webhook TEXT,
     maintenance_until INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
 );

@@ -12,7 +12,6 @@ export interface Project {
   id: string;
   token: string;
   display_name: string;
-  slack_webhook: string | null;
   maintenance_until: number;
   created_at: number;
 }

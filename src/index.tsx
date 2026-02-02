@@ -468,10 +468,9 @@ app.put('/api/config', async (c) => {
     const body = await c.req.json<ConfigPayload & {
       project_id: string;
       display_name: string;
-      slack_webhook?: string;
     }>();
 
-    const { project_id, display_name, slack_webhook, checks } = body;
+    const { project_id, display_name, checks } = body;
 
     // Validate required fields
     if (!project_id || !display_name) {
@@ -495,13 +494,12 @@ app.put('/api/config', async (c) => {
     // Upsert project
     await db
       .prepare(`
-        INSERT INTO projects (id, token, display_name, slack_webhook, maintenance_until, created_at)
-        VALUES (?, ?, ?, ?, 0, ?)
+        INSERT INTO projects (id, token, display_name, maintenance_until, created_at)
+        VALUES (?, ?, ?, 0, ?)
         ON CONFLICT (id) DO UPDATE SET
-          display_name = ?,
-          slack_webhook = COALESCE(?, slack_webhook)
+          display_name = ?
       `)
-      .bind(project_id, token, display_name, slack_webhook ?? null, now, display_name, slack_webhook ?? null)
+      .bind(project_id, token, display_name, now, display_name)
       .run();
 
     // Upsert checks
@@ -1272,10 +1270,6 @@ app.post('/admin/projects/new-dialog', async (c) => {
         <input type="text" name="token" placeholder="Generate secure token" required minlength="16" />
         <small>At least 16 characters</small>
       </label>
-      <label>
-        Slack Webhook (optional)
-        <input type="text" name="slack_webhook" placeholder="https://hooks.slack.com/services/..." />
-      </label>
       <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
         <button type="submit" class="primary">Create</button>
         <button type="button" class="outline secondary" @click="closeModal()">Cancel</button>
@@ -1308,7 +1302,6 @@ app.post('/admin/projects/new', async (c) => {
       project_id,
       display_name,
       token,
-      slack_webhook,
     } = body;
 
     // Validate required fields
@@ -1336,13 +1329,12 @@ app.post('/admin/projects/new', async (c) => {
 
     // Create the project
     await db.prepare(`
-      INSERT INTO projects (id, token, display_name, slack_webhook, maintenance_until, created_at)
-      VALUES (?, ?, ?, ?, 0, ?)
+      INSERT INTO projects (id, token, display_name, maintenance_until, created_at)
+      VALUES (?, ?, ?, 0, ?)
     `).bind(
       project_id,
       token,
       display_name,
-      slack_webhook || null,
       now
     ).run();
 
@@ -1488,7 +1480,6 @@ export const scheduled = async (
           id: 'watch-dog',
           token: '',
           display_name: 'Watch-Dog Sentinel',
-          slack_webhook: null,
           maintenance_until: 0,
           created_at: now,
         };
@@ -1532,7 +1523,6 @@ export const scheduled = async (
             id: check.project_id,
             token: check.token,
             display_name: check.project_name,
-            slack_webhook: check.slack_webhook,
             maintenance_until: check.maintenance_until,
             created_at: check.created_at,
           };
