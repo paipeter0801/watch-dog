@@ -1,3 +1,18 @@
+-- src/db.sql
+-- Database schema for Watch-Dog Sentinel
+--
+-- Tables:
+--   - projects: Stores project tokens and maintenance state
+--   - checks: Defines monitoring rules and current state
+--   - logs: Historical log entries (periodically cleaned)
+--   - settings: Admin-configurable settings (Slack, cooldown)
+--
+-- The schema uses SQLite syntax compatible with Cloudflare D1.
+-- All timestamps are stored as Unix timestamps (seconds since epoch).
+
+-- ============================================================================
+-- Projects Table
+-- ============================================================================
 -- Projects table: manages tokens and global maintenance state
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,

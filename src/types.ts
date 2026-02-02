@@ -1,3 +1,17 @@
+/**
+ * src/types.ts
+ * Type definitions for Watch-Dog Sentinel
+ *
+ * This file defines all TypeScript interfaces used throughout the application:
+ * - Env: Cloudflare Worker environment bindings
+ * - Project: Project entity with maintenance state
+ * - Check: Check entity with monitoring rules and current state
+ * - Log: Historical log entries
+ * - PulsePayload, ConfigPayload, CheckConfig: API request types
+ *
+ * @module types
+ */
+
 export interface Env {
   DB: D1Database;
   SLACK_API_TOKEN: string;

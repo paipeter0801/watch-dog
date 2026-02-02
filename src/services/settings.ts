@@ -1,3 +1,20 @@
+/**
+ * src/services/settings.ts
+ * Settings management service for Watch-Dog Sentinel
+ *
+ * Provides functions to:
+ * - Retrieve all settings from the database
+ * - Update individual settings
+ * - Update all Slack settings atomically
+ * - Get settings with environment variable fallback
+ *
+ * Settings are stored in the `settings` table and include:
+ * - Slack API token and channel IDs
+ * - Silence period (cooldown) for alerts
+ *
+ * @module services/settings
+ */
+
 import { D1Database } from '@cloudflare/workers-types';
 import { Env } from '../types';
 
