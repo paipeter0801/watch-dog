@@ -4,7 +4,6 @@
 import { D1Database } from '@cloudflare/workers-types';
 import { Env, Check, Project } from '../types';
 import { sendSlackAlert, isInSilencePeriod, getSilencePeriod } from './alert';
-import { getAllSettings } from './settings';
 
 export async function processCheckResult(
   db: D1Database,
