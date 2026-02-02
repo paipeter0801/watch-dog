@@ -927,7 +927,7 @@ app.get('/admin', async (c) => {
     </div>
 
     <div class="checks-list">
-      ${projectsWithChecks
+      ${raw(projectsWithChecks
         .filter((p: any) => true) // Filter done in frontend via Alpine.js
         .map((p: any) => {
           const statusOrder: any = { dead: 3, error: 2, ok: 1 };
@@ -963,7 +963,7 @@ app.get('/admin', async (c) => {
             </tr>
           </thead>
           <tbody>
-            ${sortedChecks.map((check: any) => html`
+            ${raw(sortedChecks.map((check: any) => html`
               <tr>
                 <td>${check.display_name || check.name}</td>
                 <td>${check.type}</td>
@@ -994,13 +994,13 @@ app.get('/admin', async (c) => {
                   >Delete</button>
                 </td>
               </tr>
-            `)}
+            `).join(''))}
           </tbody>
         </table>
       </div>
     </div>`;
         })
-        .join('')}
+        .join(''))}
     </div>
   </div>
 
