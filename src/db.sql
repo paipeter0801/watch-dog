@@ -45,3 +45,20 @@ CREATE TABLE IF NOT EXISTS logs (
 -- Indexes for query optimization
 CREATE INDEX IF NOT EXISTS idx_checks_project ON checks(project_id);
 CREATE INDEX IF NOT EXISTS idx_logs_check_id ON logs(check_id);
+
+-- Settings table for admin configuration (replaces env vars)
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at INTEGER DEFAULT (unixepoch())
+);
+
+-- Insert default settings from current env
+INSERT OR IGNORE INTO settings (key, value, description) VALUES
+    ('slack_api_token', '', 'Slack Bot Token (xoxb-...)'),
+    ('slack_channel_info', '', 'Slack Channel ID for Info logs'),
+    ('slack_channel_warning', '', 'Slack Channel ID for Warnings'),
+    ('slack_channel_success', '', 'Slack Channel ID for Success/Recovery'),
+    ('slack_channel_critical', '', 'Slack Channel ID for Critical alerts'),
+    ('silence_period_seconds', '3600', 'Cooldown period in seconds for duplicate alerts');
