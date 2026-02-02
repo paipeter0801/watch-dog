@@ -3,7 +3,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { html } from 'hono/html';
+import { html, raw } from 'hono/html';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
 import { processCheckResult, findDeadChecks } from './services/logic';
