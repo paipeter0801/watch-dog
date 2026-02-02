@@ -3,7 +3,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { html, HtmlEscapedString } from 'hono/html';
+import { html } from 'hono/html';
 import type { ScheduledEvent } from '@cloudflare/workers-types';
 import { Env, Project, Check, PulsePayload, ConfigPayload, CheckConfig } from './types';
 import { processCheckResult, findDeadChecks } from './services/logic';
@@ -32,7 +32,7 @@ app.use('*', cors());
  * @param title - Page title
  * @param content - Main content to render
  */
-const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; content: string | HtmlEscapedString }) => html`
+const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; content: any }) => html`
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -238,7 +238,7 @@ const ProjectCard = (project: Project & { in_maintenance: boolean; checks: Array
         </div>
         <span class="status-badge ${check.status}">${check.status}</span>
       </div>
-    `).join('')}
+    `)}
   </div>
   <div class="maintenance-controls">
     <button
@@ -345,7 +345,7 @@ app.get('/', async (c) => {
     </div>
   ` : html`
     <div class="dashboard-grid">
-      ${projectsWithChecks.map((p) => html`${ProjectCard(p)}`)}
+      ${projectsWithChecks.map(p => ProjectCard(p))}
     </div>
   `}
 </div>
