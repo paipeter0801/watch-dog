@@ -944,7 +944,7 @@ app.get('/admin', async (c) => {
             <td>
               <button
                 hx-delete="/admin/checks/${check.id}"
-                hx-confirm="Are you sure?"
+                hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
                 hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
                 hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
                 class="outline secondary contrast"
