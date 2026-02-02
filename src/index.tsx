@@ -245,6 +245,58 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
       padding: 0.25rem 0.5rem;
       border-radius: 0.25rem;
     }
+
+    /* ============================================================================
+     * Responsive Design (RWD)
+     * ============================================================================ */
+
+    /* Mobile (< 640px) */
+    @media (max-width: 639px) {
+      /* Header: stack vertically */
+      .header-actions {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      /* Stats cards: single column */
+      .stats-cards-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Dashboard grid: single column */
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+
+      /* Project card: reduce padding */
+      .project-card {
+        padding: 1rem;
+      }
+
+      /* Maintenance controls: stack buttons */
+      .maintenance-controls {
+        flex-direction: column;
+      }
+
+      /* Project header: adjust font size */
+      .project-title {
+        font-size: 1rem;
+      }
+    }
+
+    /* Tablet (640px - 1024px) */
+    @media (min-width: 640px) and (max-width: 1024px) {
+      /* Dashboard grid: 2 columns */
+      .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      /* Stats cards: 2-3 columns depending on space */
+      .stats-cards-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -384,7 +436,7 @@ app.get('/', async (c) => {
 
     // Render stats cards (only for full page)
     const statsCards = html`
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+<div class="stats-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
   <div style="background: #2a2a2a; padding: 1rem; border-radius: 0.5rem; border-left: 3px solid #3498db;">
     <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Total Checks</div>
     <div style="font-size: 1.5rem; font-weight: 600;">${totalChecks}</div>
