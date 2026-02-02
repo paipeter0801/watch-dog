@@ -939,7 +939,7 @@ app.get('/admin', async (c) => {
         style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; border-radius: 0.5rem; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
       >
         <div style="display: flex; align-items: center; gap: 1rem;">
-          <span style="font-size: 1.5rem;">${'▶'}</span>
+          <span x-text="expanded ? '▼' : '▶'" style="font-size: 1.5rem;"></span>
           <div>
             <div style="font-weight: bold;">${p.display_name}</div>
             <small style="color: #888;">${p.checks.length} checks</small>
