@@ -917,7 +917,7 @@ app.get('/admin', async (c) => {
   </div>
 
   <!-- Checks Tab -->
-  <div x-show="openTab === 'checks'" x-cloak x-data="{ filterProject: 'all', expandedProjects: {} }">
+  <div x-show="openTab === 'checks'" x-cloak x-data="{ filterProject: 'all' }">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h2 style="margin: 0;">All Checks</h2>
       <select x-model="filterProject" style="padding: 0.5rem;">
@@ -933,9 +933,9 @@ app.get('/admin', async (c) => {
           const statusOrder: any = { dead: 3, error: 2, ok: 1 };
           const sortedChecks = [...p.checks].sort((a: any, b: any) => statusOrder[b.status] - statusOrder[a.status]);
           return html`
-    <div class="project-card" x-data="{ expanded: expandedProjects['${p.id}'] || false }">
+    <div class="project-card" x-data="{ expanded: false }" x-show="filterProject === 'all' || filterProject === '${p.id}'">
       <div
-        @click="expanded = !expanded; expandedProjects['${p.id}'] = expanded"
+        @click="expanded = !expanded"
         style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: #2a2a2a; border-radius: 0.5rem; cursor: pointer; border-left: 4px solid ${p.projectStatus === 'dead' ? '#e74c3c' : p.projectStatus === 'error' ? '#f39c12' : '#2ecc71'};"
       >
         <div style="display: flex; align-items: center; gap: 1rem;">
