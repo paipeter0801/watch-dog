@@ -947,9 +947,9 @@ app.get('/admin', async (c) => {
                 hx-confirm="確認刪除檢查「${check.display_name || check.name}」？此操作無法復原。"
                 hx-headers='{"X-Requested-With": "XMLHttpRequest"}'
                 hx-on::after-request="if(this.getResponseHeader('X-Deleted') === 'true') window.location.href='/admin'"
-                class="outline secondary contrast"
-                style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
-              >×</button>
+                class="outline secondary"
+                style="font-size: 0.75rem;"
+              >Delete</button>
             </td>
           </tr>
         `)}
@@ -1255,7 +1255,7 @@ app.post('/admin/checks/:checkId', async (c) => {
 app.post('/admin/projects/new-dialog', async (c) => {
   return c.html(html`
 <div x-data="{ open: true }" x-show="open" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-  <div @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%;">
+  <div @click.outside="closeModal()" style="background: #242424; padding: 2rem; border-radius: 0.5rem; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto;">
     <h3>New Project</h3>
     <form hx-post="/admin/projects/new" hx-target="body" hx-swap="outerHTML">
       <label>
