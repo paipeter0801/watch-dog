@@ -366,6 +366,14 @@ const Layout = ({ title = 'Watch-Dog Sentinel', content }: { title?: string; con
         grid-template-columns: repeat(2, 1fr) !important;
       }
     }
+
+    /* Large screens (> 1400px) */
+    @media (min-width: 1400px) {
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+    }
   </style>
 </head>
 <body>
