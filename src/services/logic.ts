@@ -82,7 +82,7 @@ export async function processCheckResult(
       ? 'Service Warning'
       : 'Service Recovered';
 
-    await sendSlackAlert(db, {
+    await sendSlackAlert(db, env, {
       checkId: check.id,
       projectName: project.display_name,
       checkName: check.display_name || check.name,

@@ -22,15 +22,15 @@ export interface Env {
   /** D1 Database binding */
   DB: D1Database;
   /** @deprecated Use settings table instead */
-  SLACK_API_TOKEN: string;
+  SLACK_API_TOKEN?: string;
   /** @deprecated Use settings table instead */
-  SLACK_CHANNEL_CRITICAL: string;
+  SLACK_CHANNEL_CRITICAL?: string;
   /** @deprecated Use settings table instead */
-  SLACK_CHANNEL_SUCCESS: string;
+  SLACK_CHANNEL_SUCCESS?: string;
   /** @deprecated Use settings table instead */
-  SLACK_CHANNEL_WARNING: string;
+  SLACK_CHANNEL_WARNING?: string;
   /** @deprecated Use settings table instead */
-  SLACK_CHANNEL_INFO: string;
+  SLACK_CHANNEL_INFO?: string;
   /** @deprecated Use settings table instead */
   SLACK_SILENCE_PERIOD_SECONDS?: string;
 }

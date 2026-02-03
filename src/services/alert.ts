@@ -3,7 +3,7 @@
 
 import { D1Database } from '@cloudflare/workers-types';
 import { Env } from '../types';
-import { getAllSettings, AllSettings } from './settings';
+import { getAllSettings, getEnvWithFallback } from './settings';
 
 /**
  * Alert levels for Watch-Dog notifications
@@ -73,7 +73,7 @@ const STYLE_MAP: Record<AlertLevel, { emoji: string; color: string }> = {
  * });
  * ```
  */
-export async function sendSlackAlert(db: D1Database, data: SlackAlertData): Promise<void> {
+export async function sendSlackAlert(db: D1Database, env: Env, data: SlackAlertData): Promise<void> {
   const {
     checkId,
     projectName,
@@ -85,8 +85,8 @@ export async function sendSlackAlert(db: D1Database, data: SlackAlertData): Prom
     metadata = {},
   } = data;
 
-  // Get settings from database
-  const settings = await getAllSettings(db);
+  // Get settings from database with environment variable fallback
+  const settings = await getEnvWithFallback(db, env);
 
   // Get Slack token from settings
   const token = settings.api_token;
@@ -262,13 +262,14 @@ export async function getSilencePeriod(db: D1Database): Promise<number> {
  */
 export async function alertCritical(
   db: D1Database,
+  env: Env,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(db, {
+  return sendSlackAlert(db, env, {
     checkId,
     projectName,
     checkName,
@@ -284,13 +285,14 @@ export async function alertCritical(
  */
 export async function alertRecovery(
   db: D1Database,
+  env: Env,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(db, {
+  return sendSlackAlert(db, env, {
     checkId,
     projectName,
     checkName,
@@ -306,13 +308,14 @@ export async function alertRecovery(
  */
 export async function alertWarning(
   db: D1Database,
+  env: Env,
   checkId: string,
   projectName: string,
   checkName: string,
   message: string,
   metadata?: Record<string, string | number>
 ): Promise<void> {
-  return sendSlackAlert(db, {
+  return sendSlackAlert(db, env, {
     checkId,
     projectName,
     checkName,
