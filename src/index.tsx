@@ -772,10 +772,19 @@ app.post('/api/pulse', async (c) => {
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
 
-  // Get auth token from header
-  const token = c.req.header('X-Project-Token');
+  // Support both Authorization: Bearer and legacy X-Project-Token
+  const authHeader = c.req.header('Authorization');
+  let token: string | undefined;
+
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else {
+    // Fallback to legacy header for backward compatibility
+    token = c.req.header('X-Project-Token');
+  }
+
   if (!token) {
-    return c.json({ error: 'Missing X-Project-Token header' }, 401);
+    return c.json({ error: 'Missing Authorization header (use: Authorization: Bearer {token})' }, 401);
   }
 
   try {
