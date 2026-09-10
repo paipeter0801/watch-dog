@@ -5,6 +5,14 @@
 
 ## Entries
 
+### [2026-09-10] ok-pulse 併發覆寫 race 根治（TODO-REVIEW #19）——error-sticky CAS＋心跳降級寫
+
+**目標**：持舊快照的 ok pulse 不得洗掉剛落地的 error 狀態（2026-09-10 事件 04:15→04:16 實證：error 寫入後同秒交錯的 ok 把 `status/failure_count` 蓋回 ok/0，該 error 集數的 recovery 從未發出＝「恢復」機率隨機化）。
+**原因**：ok 路徑 UPDATE 無條件盲寫；error 路徑是 SQL 原子遞增（`failure_count = failure_count + 1`）本就安全——唯一破壞性操作是 ok 的歸零重置。單 check 多 job 複用（ek-gateway 每 job 每分鐘各自 pulse 同一 check）把交錯窗口常態化。
+**預期結果**：ok 轉移改 CAS（`WHERE id = ? AND failure_count = 快照值`）——error/dead 寫入都會 bump 計數器，移動即敗。**敗者刻意不重試**：降級為只推進 `last_seen`（`MAX(last_seen, ?)`）＋寫 log——①pulse 必須留痕（不變式 ①：漏記心跳＝害 dead 誤判）；②不讓交錯 ok 立刻把 check 拉回 ok（否則回復 flap 洗版回歸）。error 狀態存活到**下一個不與 error 競速的乾淨 ok pulse**才執行恢復轉移——收斂保證：失敗 job 停止 error 後的第一個乾淨 tick 必然恢復；與 fix A 的 episode 語義（集數真正結束才恢復）同構。書序重排：CAS 贏了才做 drain/claim/dispatch（敗者快照上不得跑任何恢復語義）；列刪除（config replace-set 競態）心跳寫 0 行→連 log 都不寫（免孤兒行）。
+**範圍**：`src/services/logic.ts` ok 分支重排、`tests/logic.test.ts`（+2：事故 race 回歸——error 落地後 stale ok 不得清狀態且心跳照記、乾淨 ok pulse 決定性恢復）、`.gitignore`（`docs/log/`——fleet sent-log 個人鏡像，global pattern 只蓋 `docs/` 直下曾露出 untracked）。無 schema、無 secret 變動。
+**驗證**：tsc ✓ / lint ✓ / app pool **98/98** ✓（96+2）/ guards 21/21 ✓（make ci 全綠 exit 0）。未部署——無 schema 前置，純 worker 邏輯，部署即生效（`npm run deploy`）。
+
 ### [2026-09-10] 警報 email 通道對稱化——持續失敗升級進信箱＋孤兒 recovery 根治
 
 **目標**：解決「只收到 Service Recovered、從未收到問題通知」的信箱體驗（2026-09-10 ek-gateway 事件實證：收 45 分鐘孤兒 recovery 信、0 封問題信）。

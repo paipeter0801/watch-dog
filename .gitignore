@@ -34,6 +34,8 @@ lerna-debug.log*
 .DS_Store
 # 本地 token 清單（scripts/enroll.sh 寫入；值 [NEVER] 進 committed 檔）
 docs/tokens.local.md
+# fleet sent-log 個人鏡像（docs/99-llm-task-web-* 同型；global pattern 只蓋 docs/ 直下——2026-09-10 補）
+docs/log/
 
 .dev.vars*
 !.dev.vars.example

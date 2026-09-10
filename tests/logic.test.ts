@@ -278,6 +278,44 @@ describe('concurrency invariants (D1 CAS)', () => {
     expect(updated?.failure_count).toBe(0);
     expect(slackCalls.length).toBe(1); // single recovery notification
   });
+
+  it('a stale ok pulse never erases a fresher error (2026-09-10 incident race, TODO-REVIEW #19)', async () => {
+    const project = await seedProject();
+    // Pulse A (healthy job) fetched this snapshot...
+    const check = await seedCheck(project.id, { threshold: 1 });
+    // ...but an error pulse committed before A's UPDATE ran (the racing error
+    // path's SQL-atomic increment), as observed live 04:15→04:16 on ek-gateway.
+    await DB.prepare(
+      "UPDATE checks SET status = 'error', failure_count = failure_count + 1, last_message = 'status_push: 500' WHERE id = ?"
+    ).bind(check.id).run();
+
+    await processCheckResult(DB, check, project, 'ok', 'tracking_pull');
+
+    const updated = await getCheck(check.id);
+    expect(updated?.status).toBe('error'); // the failure state stands
+    expect(updated?.failure_count).toBe(1); // not reset by the stale snapshot
+    // The heartbeat is still recorded — fail-dead detection must never miss a pulse
+    expect(updated?.last_seen).toBeGreaterThanOrEqual(check.last_seen);
+    expect(await countLogs(check.id)).toBe(1); // the ok pulse is logged
+    expect(slackCalls.length).toBe(0); // and no recovery off a stale snapshot
+  });
+
+  it('the next ok pulse that does not race a failure performs the recovery transition', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id, { threshold: 1 });
+    // Leave the check in an error state a stale ok could not clear (see test above)
+    await DB.prepare(
+      "UPDATE checks SET status = 'error', failure_count = failure_count + 1 WHERE id = ?"
+    ).bind(check.id).run();
+
+    // Next tick: no error interleaves — the ok pulse wins cleanly.
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'ok', 'tracking_pull');
+
+    const updated = await getCheck(check.id);
+    expect(updated?.status).toBe('ok');
+    expect(updated?.failure_count).toBe(0);
+    expect(slackCalls.length).toBe(1); // recovery fires exactly once, deterministically
+  });
 });
 
 describe('findDeadChecks', () => {

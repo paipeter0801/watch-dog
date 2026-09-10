@@ -70,6 +70,47 @@ export async function processCheckResult(
       .run();
 
   if (newStatus === 'ok') {
+    // ===== ok-transition is a CAS on failure_count (TODO-REVIEW #19) =====
+    // Error and dead writes bump the counter atomically; if it moved since
+    // our snapshot, a fresher failure owns this row and a stale ok pulse
+    // must not erase it (2026-09-10 incident, observed 04:15→04:16: the
+    // clobber also erased the recovery that should have followed). Losing
+    // the CAS degrades to advancing last_seen only — the pulse is still
+    // recorded (fail-dead detection must never miss a heartbeat), but the
+    // failure state stands until the next ok pulse that does not race a
+    // failure; that pulse performs the recovery transition.
+    const transition = await db
+      .prepare(
+        `UPDATE checks SET
+          status = 'ok',
+          last_seen = ?,
+          failure_count = 0,
+          last_message = ?
+        WHERE id = ? AND failure_count = ?`
+      )
+      .bind(now, message, check.id, check.failure_count)
+      .run();
+
+    if ((transition.meta.changes ?? 0) !== 1) {
+      // A fresher error/dead write owns the row now. Record the heartbeat
+      // without regressing state; no recovery semantics may run on a
+      // snapshot the row has already moved past. (Row gone = config
+      // replace-set deleted it mid-flight: nothing to record.)
+      const heartbeat = await db
+        .prepare(
+          `UPDATE checks SET
+            last_seen = MAX(last_seen, ?),
+            last_message = ?
+          WHERE id = ?`
+        )
+        .bind(now, message, check.id)
+        .run();
+      if ((heartbeat.meta.changes ?? 0) === 1) {
+        await writeLog();
+      }
+      return;
+    }
+
     // Recovery: previously failed and past its threshold.
     const shouldRecover = check.status !== 'ok' && check.failure_count >= check.threshold;
 
@@ -104,18 +145,6 @@ export async function processCheckResult(
       const claim = await claimAlertSlot(db, check, now);
       sendRecovery = (claim.meta.changes ?? 0) === 1;
     }
-
-    await db
-      .prepare(
-        `UPDATE checks SET
-          status = 'ok',
-          last_seen = ?,
-          failure_count = 0,
-          last_message = ?
-        WHERE id = ?`
-      )
-      .bind(now, message, check.id)
-      .run();
 
     await writeLog();
 
