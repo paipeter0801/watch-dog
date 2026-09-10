@@ -64,6 +64,13 @@ CREATE TABLE IF NOT EXISTS checks (
     last_alert_at INTEGER DEFAULT 0,
     -- Last message from pulse (optional)
     last_message TEXT,
+    -- Email-escalation episode flag: 1 once a failing episode has been
+    -- escalated to the email channel (sustained errors / dead). Cleared when
+    -- the episode resolves (error window drained + ok pulse). Recovery emails
+    -- are only sent for email-worthy episodes — this is what stops "orphan
+    -- recovery" emails for warning-level flaps the operator was never told
+    -- about (2026-09-10 ek-gateway incident).
+    escalated INTEGER DEFAULT 0,
 
     -- ---------- Monitoring Control ----------
     -- If 0, cron watcher will skip this check (1 = enabled, 0 = disabled)

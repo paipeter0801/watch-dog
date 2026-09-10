@@ -351,3 +351,194 @@ describe('dispatchAlert — dual channel (Slack + email-king gateway)', () => {
     expect(ekCalls).toHaveLength(0);
   });
 });
+
+describe('email escalation — sustained failures reach the inbox', () => {
+  let ekCalls: string[];
+  let slackBodies: string[];
+
+  beforeEach(async () => {
+    await resetDb();
+    await setSlackSettings();
+    await setEmailSettings();
+    ekCalls = [];
+    slackBodies = [];
+    network.use(
+      http.post('https://slack.com/api/chat.postMessage', async ({ request }) => {
+        slackBodies.push(await request.text());
+        return HttpResponse.json({ ok: true });
+      }),
+      http.post(TEST_EMAIL.email_gateway_url, async ({ request }) => {
+        ekCalls.push(await request.text());
+        return HttpResponse.json({ status: 'sent', message_id: 'm1' });
+      }),
+    );
+  });
+
+  /** Seed a raw error log row with a controlled timestamp (window tests). */
+  const seedErrorLog = (checkId: string, createdAt: number) =>
+    DB.prepare("INSERT INTO logs (check_id, status, latency, message, created_at) VALUES (?, 'error', 0, 'seeded error', ?)")
+      .bind(checkId, createdAt)
+      .run();
+
+  it('escalates to email on the 3rd error within the window — even while ok pulses keep resetting failure_count and the silence clock (2026-09-10 ek-gateway incident regression)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id); // threshold=1, cooldown=900
+
+    // Error #1 → plain warning (Slack only)
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'error', 'status_push: 500');
+    expect(ekCalls).toHaveLength(0);
+
+    // Healthy job's ok pulse 2 minutes later — resets failure_count to 0 and
+    // (today's bug) would fire an orphan recovery email
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'ok', 'tracking_pull');
+    expect(ekCalls).toHaveLength(0); // orphan recovery email is GONE
+
+    // Error #2 → warning silenced (recovery claim reset last_alert_at)
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'error', 'status_push: 500');
+    expect(ekCalls).toHaveLength(0);
+
+    // Another interleaved ok pulse
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'ok', 'tracking_pull');
+    expect(ekCalls).toHaveLength(0);
+
+    // Error #3 → 3rd error in the sliding window → ESCALATION EMAIL
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'error', 'status_push: 500');
+
+    expect(ekCalls).toHaveLength(1);
+    expect(ekCalls[0]).toContain('Sustained'); // subject: "Service Warning — Sustained"
+    const updated = await getCheck(check.id);
+    expect(updated?.escalated).toBe(1); // episode flagged as email-worthy
+  });
+
+  it('a single transient error never reaches the inbox (warning stays Slack-only)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id);
+
+    await processCheckResult(DB, check, project, 'error', 'one-off blip');
+    expect(slackBodies).toHaveLength(1); // warning to Slack
+    expect(ekCalls).toHaveLength(0); // but not email
+
+    await processCheckResult(DB, (await getCheck(check.id))!, project, 'ok', 'Pulse received');
+    expect(ekCalls).toHaveLength(0); // and its recovery is Slack-only too (fix A)
+    expect((await getCheck(check.id))?.escalated).toBe(0);
+  });
+
+  it('does not count errors older than the 15-minute window (window slides)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id);
+    // Three errors, but all outside the window
+    for (let i = 0; i < 3; i++) await seedErrorLog(check.id, nowSec() - 901 - i);
+
+    await processCheckResult(DB, check, project, 'error', 'fresh failure');
+
+    expect(ekCalls).toHaveLength(0); // 0 prior + 1 current = 1 < 3 → no escalation
+    expect((await getCheck(check.id))?.escalated).toBe(0);
+  });
+
+  it('concurrent error pulses at the escalation threshold produce exactly one escalation email (CAS)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id);
+    // Two errors already in the window; two more pulses race to be the 3rd/4th
+    await seedErrorLog(check.id, nowSec() - 60);
+    await seedErrorLog(check.id, nowSec() - 30);
+
+    await Promise.all([
+      processCheckResult(DB, check, project, 'error', 'race A'),
+      processCheckResult(DB, check, project, 'error', 'race B'),
+    ]);
+
+    expect(ekCalls).toHaveLength(1); // escalation claimed exactly once
+    expect((await getCheck(check.id))?.escalated).toBe(1);
+  });
+
+  it('suppresses escalation during maintenance mode (like every other alert)', async () => {
+    const project = await seedProject({ maintenance_until: nowSec() + 600 });
+    const check = await seedCheck(project.id);
+    await seedErrorLog(check.id, nowSec() - 60);
+    await seedErrorLog(check.id, nowSec() - 30);
+
+    await processCheckResult(DB, check, project, 'error', 'maintained failure');
+
+    expect(ekCalls).toHaveLength(0);
+    expect((await getCheck(check.id))?.escalated).toBe(0);
+  });
+});
+
+describe('recovery email gating — no orphan recovery (fix A)', () => {
+  let ekCalls: string[];
+  let slackBodies: string[];
+
+  beforeEach(async () => {
+    await resetDb();
+    await setSlackSettings();
+    await setEmailSettings();
+    ekCalls = [];
+    slackBodies = [];
+    network.use(
+      http.post('https://slack.com/api/chat.postMessage', async ({ request }) => {
+        slackBodies.push(await request.text());
+        return HttpResponse.json({ ok: true });
+      }),
+      http.post(TEST_EMAIL.email_gateway_url, async ({ request }) => {
+        ekCalls.push(await request.text());
+        return HttpResponse.json({ status: 'sent', message_id: 'm1' });
+      }),
+    );
+  });
+
+  it('recovery from a dead check still emails (email-worthy episode, unchanged)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id, { status: 'dead', failure_count: 3 });
+
+    await processCheckResult(DB, check, project, 'ok', 'Pulse received');
+
+    expect(ekCalls).toHaveLength(1);
+    expect(ekCalls[0]).toContain('Recovered');
+    expect(slackBodies).toHaveLength(1);
+  });
+
+  it('escalated episode: interleaved ok pulses while the error window is still hot send NO email', async () => {
+    const project = await seedProject();
+    // Episode already escalated, still erroring
+    const check = await seedCheck(project.id, { status: 'error', failure_count: 1, escalated: 1 });
+    // Error still inside the window → episode unresolved
+    await DB.prepare("INSERT INTO logs (check_id, status, latency, message, created_at) VALUES (?, 'error', 0, 'still failing', ?)")
+      .bind(check.id, nowSec() - 60)
+      .run();
+
+    await processCheckResult(DB, check, project, 'ok', 'tracking_pull');
+
+    expect(ekCalls).toHaveLength(0); // no email for an unresolved episode
+    expect((await getCheck(check.id))?.escalated).toBe(1); // flag survives
+    expect(slackBodies).toHaveLength(1); // Slack still gets the flap detail
+  });
+
+  it('escalated episode resolves when the error window drains: exactly ONE recovery email, flag cleared', async () => {
+    const project = await seedProject();
+    // Escalated episode; last error is now outside the window (episode over)
+    const check = await seedCheck(project.id, { escalated: 1 });
+    await DB.prepare("INSERT INTO logs (check_id, status, latency, message, created_at) VALUES (?, 'error', 0, 'old failure', ?)")
+      .bind(check.id, nowSec() - 901)
+      .run();
+
+    await processCheckResult(DB, check, project, 'ok', 'tracking_pull');
+
+    expect(ekCalls).toHaveLength(1);
+    expect(ekCalls[0]).toContain('Recovered');
+    expect((await getCheck(check.id))?.escalated).toBe(0);
+  });
+
+  it('resolution fires once even under concurrent ok pulses (CAS on the flag)', async () => {
+    const project = await seedProject();
+    const check = await seedCheck(project.id, { escalated: 1 });
+    // window empty
+
+    await Promise.all([
+      processCheckResult(DB, check, project, 'ok', 'Pulse A'),
+      processCheckResult(DB, check, project, 'ok', 'Pulse B'),
+    ]);
+
+    expect(ekCalls).toHaveLength(1);
+    expect((await getCheck(check.id))?.escalated).toBe(0);
+  });
+});

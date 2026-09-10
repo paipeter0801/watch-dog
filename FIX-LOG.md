@@ -5,6 +5,14 @@
 
 ## Entries
 
+### [2026-09-10] 警報 email 通道對稱化——持續失敗升級進信箱＋孤兒 recovery 根治
+
+**目標**：解決「只收到 Service Recovered、從未收到問題通知」的信箱體驗（2026-09-10 ek-gateway 事件實證：收 45 分鐘孤兒 recovery 信、0 封問題信）。
+**原因**：兩個政策不對稱疊加——①`EMAIL_LEVELS={critical,recovery}`：warning（error pulse）永遠不進信箱，但 warning→ok 的**每個 flap 都寄 recovery**（為沒被通知過的錯誤補寄恢復＝孤兒信）；②recovery 路徑不受靜默期約束且逐 flap CAS claim 寄信，同時 claim 重置 `last_alert_at` 反把後續 warning 摀住（Slack 也只剩恢復）。ek-gateway 單 check 多工複用（每 job 各自 pulse 同一 `jobs` check）＋ collector 500 風暴把此組合放大成信箱洗版。附帶發現：watch-dog 自身 `failure_count` 在 flap 期間 0↔1 震盪（交錯 ok 歸零），連續計數永遠觸不了發——升級訊號必須走 logs（append-only）。
+**預期結果**：①**升級**：15 分鐘滑動窗內 ≥3 次 error pulse → warning 提升為 email-worthy（`Service Warning — Sustained`，帶 `N errors in 15min` 訊息），CAS on `checks.escalated` 去重（每集一封）；**刻意不受靜默期約束**（recovery flap 重置 last_alert_at 正是最該 page 的場景）；maintenance 照舊抑制。②**recovery 門控**：`EMAIL_LEVELS` 縮為 `{critical}`；recovery/warning 一律經 `emailWorthy` 旗標——recovery 僅當本集 dead 或 escalated 且錯誤窗已排空（episode 解除＝排空後第一個 ok pulse，CAS 去重恰一封）。瞬時 warning 行為不變（Slack-only）。升級判定走 logs 滑動窗，順帶免疫既有 ok-pulse 併發覆寫 race（TODO-REVIEW #19）。
+**範圍**：`src/services/logic.ts`（countRecentErrors＋升級/解除判定＋dispatch 條件）、`src/services/alert.ts`（`SlackAlertData.emailWorthy`＋`dispatchAlert` 門控＋EMAIL_LEVELS 註解）、`src/db.sql`＋`src/types.ts`（`checks.escalated` 旗標）、`tests/logic.test.ts`（+10：事故回歸含交錯 ok、瞬時不寄、窗口滑動、升級 CAS、maintenance 抑制、dead-recovery 不變、熱窗不寄、排空解除、併發解除 CAS）、`tests/utils.ts`（seedCheck＋escalated）、`docs/usage.md`（email 語義段）、`TODO-REVIEW.md`（#19 race 登記）。**生產 D1 需一次性 `ALTER TABLE checks ADD COLUMN escalated INTEGER DEFAULT 0`，且 [MUST] 先於 worker deploy**（舊代碼 SELECT 缺欄不炸，新代碼對缺欄 UPDATE 會炸）。
+**驗證**：tsc ✓ / lint ✓ / app pool **96/96** ✓（86+10）/ guards 21/21 ✓。未部署——待操作者確認後按序執行：remote ALTER → `npm run deploy` → 線上驗證（下個 collector 500 風暴應收到 Sustained＋Recovered 各一封）。
+
 ### [2026-09-07] D1 rows-read 大戶根治——logs 清理加 created_at 索引＋降頻每小時
 **目標**：消除 watch-dog-db 每日 ~4.1M rows-read 額度消耗（共享 dev 帳號 5M/日上限的元兇——alliance-member dev admin 為此全 500、code 7500）。
 **原因**：cron 每分鐘跑 `DELETE FROM logs WHERE created_at < ?`（7 天清理），`logs.created_at` 無索引 → 每次全表掃描（insights 實證：24h 內 1,135 次、avgRowsRead ~3.6k）× 日 1,440 次 ≈ 4.1M rows/day。

@@ -95,6 +95,9 @@ export interface Check {
   last_alert_at: number;
   /** Last message from pulse (null = none) */
   last_message: string | null;
+  /** Email-escalation episode flag: 1 = this failing episode has been
+   *  escalated to email (sustained errors or dead); gates recovery emails. */
+  escalated: number;
   /** Whether this check is monitored (1 = enabled, 0 = disabled) */
   monitor: number;
 }

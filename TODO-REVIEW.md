@@ -32,6 +32,7 @@
 | 16 | `AGENTS.md` = `CLAUDE.md` 內文逐字複製（80 行） | ~~無機械驗證~~ | framework.test.ts 加 guard：兩檔 body（首個 `## ` 起）不一致即紅 | **已清償 2026-09-04**（88b0a3c） |
 | 17 | `src/routes/api.ts` `PUT /api/config` | ~~API 層不驗 project token 強度——「至少 16 字元」只在 admin UI client-side~~ | 註冊封閉化：`PUT /api/config` 未知 project 回 404（建立只走 `/admin`）；`POST /admin/projects/new` 加 server-side `token.length >= 16`（api/admin 測試 +2） | **已清償 2026-09-05**（closed registration 輪） |
 | 18 | `src/routes/api.ts` 註冊面 | ~~開放註冊＋無 rate limit——知道 URL 者可建立垃圾 project；更嚴重：建 check 不發 pulse → 判死警報打進操作者 Slack（警報通道虐待）~~ | 註冊封閉化後未認證寫入面歸零——垃圾/虐待專案建立現需 admin 憑證；admin 面 brute-force 由既有 Basic Auth + timingSafeEqual 姿態涵蓋 | **已清償 2026-09-05**（隨 #17 一併消除） |
+| 19 | `src/services/logic.ts` ok 路徑 UPDATE（status/failure_count 覆寫） | 併發 race：同秒多 pulse 交錯時，持舊快照的 ok pulse 無條件覆寫 `status='ok', failure_count=0`（無 CAS），可洗掉剛寫入的 error 狀態——2026-09-10 事件 04:15→04:16 可觀測實證（error 後 ok 卻未發 recovery＝狀態已被併發 ok 洗掉）。影響：`checks.status` 顯示與 warning 計數受污染、flap 期 recovery 發送機率隨機化 | ok 路徑 UPDATE 加 CAS（如 `WHERE failure_count = ?` 快照比對，敗者重讀重算），與 dead 路徑同姿態。2026-09-10 升級判定已改走 logs 滑動窗（append-only），警報正確性不再依賴此欄位 | **待處理（2026-09-10 登記，隨警報對稱化輪發現）** |
 
 ## 複本盤點確認非債項（避免重複調查）
 

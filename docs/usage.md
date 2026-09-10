@@ -53,7 +53,7 @@ Token 交接給客戶端專案時走該專案的 secrets 管理管道（如各 r
 
 ### Settings 標籤
 - Slack API Token 與頻道 ID（Token 遮罩顯示，留空送出 = 保留）
-- **Email Alerts（email-king gateway）**：gateway URL＋consumer token（遮罩、留空保留）＋收件人——**critical（服務中斷）與 recovery** 會另寄 email（warning 僅 Slack，信箱留給真中斷）。token 向操作者索取（email-king 經 SSH mint，見該 repo README「透過 email-king 寄信」節）
+- **Email Alerts（email-king gateway）**：gateway URL＋consumer token（遮罩、留空保留）＋收件人。email 通道語義（2026-09-10 對稱化後）——**critical（判死）無條件寄**；**warning 在 15 分鐘內第 3 次 error 起升級寄信**（`Service Warning — Sustained`，每集一封）；**recovery 只在該集曾進過信箱（判死或升級）且錯誤窗排空後寄**（有頭有尾各一封）——瞬時 warning 與其恢復僅 Slack（信箱留給真中斷）。token 向操作者索取（email-king 經 SSH mint，見該 repo README「透過 email-king 寄信」節）
 - 警報全局靜默期
 - **測試警報**：Slack 三顆按鈕（critical／warning／recovery）＋ **📧 Test Email**——各送一通真實訊息，**當場顯示送達成敗**（✓ 或具體錯誤——token 未設、頻道未設、API 拒絕含 email-king 錯誤碼）——修完設定按一下就知道通了沒
 

@@ -25,6 +25,28 @@ const claimAlertSlot = (db: D1Database, check: Check, now: number) =>
     .bind(now, check.id, check.last_alert_at)
     .run();
 
+// ===== Email escalation (2026-09-10 incident) =====
+// An error episode becomes email-worthy after ESCALATION_THRESHOLD error
+// pulses within ESCALATION_WINDOW_SECONDS. Keyed on log history (append-only)
+// rather than checks.failure_count: when one check multiplexes several jobs
+// (e.g. ek-gateway pulsing all jobs into "jobs"), interleaved ok pulses from
+// healthy jobs reset failure_count to 0 every couple of minutes — a
+// consecutive counter would never fire while a real incident is ongoing
+// (ek-gateway flap: failure_count oscillated 0↔1 for 45 minutes).
+const ESCALATION_WINDOW_SECONDS = 900;
+const ESCALATION_THRESHOLD = 3;
+
+/** Count error log rows for a check inside the escalation window. */
+const countRecentErrors = (db: D1Database, checkId: string, now: number) =>
+  db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM logs
+      WHERE check_id = ? AND status = 'error' AND created_at >= ?`
+    )
+    .bind(checkId, now - ESCALATION_WINDOW_SECONDS)
+    .first<{ n: number }>()
+    .then((row) => row?.n ?? 0);
+
 export async function processCheckResult(
   db: D1Database,
   check: Check,
@@ -51,6 +73,30 @@ export async function processCheckResult(
     // Recovery: previously failed and past its threshold.
     const shouldRecover = check.status !== 'ok' && check.failure_count >= check.threshold;
 
+    // ===== Recovery email gating (fix A) =====
+    // The email channel is page-worthy only: a recovery emails when the
+    // episode was DEAD (critical level) or had escalated (sustained errors).
+    // Recovering from a plain warning never emails — that was the
+    // orphan-recovery bug (operators got "recovered" for failures they were
+    // never told about, because warnings are Slack-only).
+    // An escalated episode resolves only when the error window has drained:
+    // interleaved ok pulses from healthy jobs sharing the check must not
+    // "resolve" an incident that is still erroring. CAS on the flag makes
+    // the resolution fire exactly once.
+    let sendRecoveryEmail = check.status === 'dead';
+    let resolveEpisode = false;
+    if (check.escalated === 1) {
+      const recentErrors = await countRecentErrors(db, check.id, now);
+      if (recentErrors === 0) {
+        const release = await db
+          .prepare('UPDATE checks SET escalated = 0 WHERE id = ? AND escalated = 1')
+          .bind(check.id)
+          .run();
+        resolveEpisode = (release.meta.changes ?? 0) === 1;
+        sendRecoveryEmail = sendRecoveryEmail || resolveEpisode;
+      }
+    }
+
     // Claim the recovery alert first: concurrent ok pulses after a failure
     // streak must yield exactly one alert.
     let sendRecovery = false;
@@ -73,7 +119,7 @@ export async function processCheckResult(
 
     await writeLog();
 
-    if (sendRecovery) {
+    if (sendRecovery || resolveEpisode) {
       await dispatchAlert(db, {
         checkId: check.id,
         projectName: project.display_name,
@@ -86,6 +132,7 @@ export async function processCheckResult(
           Interval: `${check.interval}s`,
           Grace: `${check.grace}s`,
         },
+        emailWorthy: sendRecoveryEmail,
       });
     }
     return;
@@ -100,6 +147,25 @@ export async function processCheckResult(
   const hitThreshold = projectedFailures >= check.threshold;
   const outsideSilence = !isInSilencePeriod(check.last_alert_at, silencePeriod, now);
   let wantsAlert = !inMaintenance && hitThreshold && outsideSilence;
+
+  // ===== Escalation: sustained errors reach the email channel =====
+  // Sliding-window count from the logs (this pulse makes it sustainedCount).
+  // Deliberately NOT gated on the silence period: interleaved ok pulses keep
+  // resetting last_alert_at via recovery claims — exactly the incident shape
+  // where a human still needs to be paged. Dedup: CAS on the escalated flag
+  // → one escalation email per episode (no re-nag while the flag is set).
+  let escalate = false;
+  let sustainedCount = 0;
+  if (newStatus === 'error' && !inMaintenance && check.escalated === 0) {
+    sustainedCount = (await countRecentErrors(db, check.id, now)) + 1;
+    if (sustainedCount >= ESCALATION_THRESHOLD) {
+      const claim = await db
+        .prepare('UPDATE checks SET escalated = 1 WHERE id = ? AND escalated = 0')
+        .bind(check.id)
+        .run();
+      escalate = (claim.meta.changes ?? 0) === 1;
+    }
+  }
 
   if (newStatus === 'dead') {
     // CAS on last_seen (a fresher pulse won the race — bail out entirely;
@@ -145,8 +211,12 @@ export async function processCheckResult(
 
   await writeLog();
 
-  if (wantsAlert) {
-    const title = newStatus === 'dead' ? 'Service DEAD' : 'Service Warning';
+  // Escalation dispatches even when the silence period suppressed the plain
+  // warning (see above) — that suppression is how a sustained incident could
+  // previously page nobody.
+  if (wantsAlert || escalate) {
+    const title =
+      newStatus === 'dead' ? 'Service DEAD' : escalate ? 'Service Warning — Sustained' : 'Service Warning';
     const level = newStatus === 'dead' ? 'critical' : 'warning';
 
     await dispatchAlert(db, {
@@ -155,13 +225,16 @@ export async function processCheckResult(
       checkName: check.display_name || check.name,
       level,
       title,
-      message: `${message} (Failures: ${projectedFailures})`,
+      message: escalate
+        ? `${message} (sustained: ${sustainedCount} errors in ${ESCALATION_WINDOW_SECONDS / 60}min — escalated to email)`
+        : `${message} (Failures: ${projectedFailures})`,
       metadata: {
         Failures: projectedFailures,
         Threshold: check.threshold,
         Interval: `${check.interval}s`,
         Grace: `${check.grace}s`,
       },
+      emailWorthy: escalate || newStatus === 'dead',
     });
   }
 }

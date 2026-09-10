@@ -40,6 +40,10 @@ export interface SlackAlertData {
   url?: string;
   /** Optional metadata (shown in details section) */
   metadata?: Record<string, string | number>;
+  /** Force the email channel for this dispatch even at warning level — set
+   *  by the sustained-failure escalation path (services/logic.ts). Critical
+   *  and recovery email by level; warnings only when escalated. */
+  emailWorthy?: boolean;
 }
 
 /**
@@ -69,8 +73,13 @@ export interface SlackSendResult {
   error?: string;
 }
 
-/** Levels that also send email (outage + recovery); warnings stay Slack-only. */
-const EMAIL_LEVELS: ReadonlySet<AlertLevel> = new Set(['critical', 'recovery']);
+/** Levels that email unconditionally. `critical` (dead) always pages the
+ *  inbox. `recovery` and `warning` email only when the dispatch carries
+ *  emailWorthy — recovery for a dead/escalated episode (NOT for plain
+ *  warning flaps: that produced orphan "recovered" emails for failures the
+ *  operator was never told about), warning when sustained-failure escalation
+ *  flips it on. */
+const EMAIL_LEVELS: ReadonlySet<AlertLevel> = new Set(['critical']);
 
 /** Result of an email-king gateway send attempt (same shape as Slack). */
 export interface EmailSendResult {
@@ -323,7 +332,9 @@ export async function sendEmailAlert(db: D1Database, data: SlackAlertData): Prom
 export async function dispatchAlert(db: D1Database, data: SlackAlertData): Promise<void> {
   const [slack, email] = await Promise.all([
     sendSlackAlert(db, data),
-    EMAIL_LEVELS.has(data.level) ? sendEmailAlert(db, data) : Promise.resolve({ ok: true } satisfies EmailSendResult),
+    EMAIL_LEVELS.has(data.level) || data.emailWorthy === true
+      ? sendEmailAlert(db, data)
+      : Promise.resolve({ ok: true } satisfies EmailSendResult),
   ]);
   // Errors already console.error'd inside the senders; results are for
   // callers that want them (tests / future telemetry). Log a summary line

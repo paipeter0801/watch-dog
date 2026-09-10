@@ -125,20 +125,21 @@ export async function seedCheck(projectId: string, overrides: Partial<Check> = {
     failure_count: 0,
     last_alert_at: 0,
     last_message: null,
+    escalated: 0,
     monitor: 1,
     ...overrides,
   };
   await DB.prepare(`
     INSERT INTO checks (
       id, project_id, name, display_name, type, interval, grace, threshold, cooldown,
-      last_seen, status, failure_count, last_alert_at, last_message, monitor
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      last_seen, status, failure_count, last_alert_at, last_message, escalated, monitor
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(
       check.id, check.project_id, check.name, check.display_name, check.type,
       check.interval, check.grace, check.threshold, check.cooldown,
       check.last_seen, check.status, check.failure_count, check.last_alert_at,
-      check.last_message, check.monitor
+      check.last_message, check.escalated, check.monitor
     )
     .run();
   return check;
